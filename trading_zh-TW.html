@@ -1,0 +1,2271 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Backtest虛擬貨幣回測練習</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1e1e1e;
+            color: #d1d4dc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #toolbar {
+            padding: 10px;
+            background-color: #2a2e39;
+            border-bottom: 1px solid #363c4e;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        select, input {
+            background-color: #363c4e;
+            color: #d1d4dc;
+            border: 1px solid #4a4a4a;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        input::placeholder {
+            color: #888;
+        }
+        button {
+            background-color: #2962ff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #1e88e5;
+        }
+        button.secondary {
+            background-color: #4a4a4a;
+        }
+        #status {
+            margin-left: auto;
+            font-size: 12px;
+            color: #888;
+        }
+        #chart-container {
+            flex: 1;
+            position: relative;
+            min-height: 0; 
+            width: 100%;
+            font-size: 0; /* Eliminate whitespace height */
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #888;
+            pointer-events: none;
+            display: none; /* 預設隱藏，用 JS 控制 */
+        }
+        .tool-btn.active {
+            background-color: #2962ff;
+            color: white;
+        }
+        .tool-btn {
+            background-color: #363c4e;
+            padding: 5px 10px;
+        }
+        #trading-panel {
+            padding: 10px;
+            background-color: #232323;
+            border-bottom: 1px solid #363c4e;
+            display: none; /* Initially hidden */
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            flex-shrink: 0; /* Prevent shrinking */
+        }
+        /* Modal Styles */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 100; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            overflow: auto; 
+            background-color: rgba(0,0,0,0.5); 
+        }
+        .modal-content {
+            background-color: #2a2e39;
+            margin: 5% auto; /* Adjusted margin */
+            padding: 20px;
+            border: 1px solid #444;
+            width: 90%; /* Wider */
+            max-width: 1000px; /* Wider max-width */
+            color: #d1d4dc;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+        }
+        .stat-box div:first-child {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        .stat-box div:last-child {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .close-btn {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close-btn:hover,
+        .close-btn:focus {
+            color: #fff;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        #report-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+        th, td {
+            border-bottom: 1px solid #444;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #363c4e;
+        }
+        .text-green { color: #26a69a; }
+        .text-red { color: #ef5350; }
+    </style>
+</head>
+<body>
+<div id="toolbar">
+    <div style="display:flex; gap:10px; align-items:center;">
+        <button id="btn-mode-rt" onclick="switchMode('realtime')">即時</button>
+        <button id="btn-mode-bt" class="secondary" onclick="switchMode('backtest')">回測</button>
+        <!-- Searchable Symbol Input -->
+        <input list="symbol-options" id="symbol-input" value="BTCUSDT" placeholder="輸入代碼 (e.g. BTCUSDT)" 
+               onfocus="this.value=''" 
+               onblur="if(this.value===''){this.value=currentSymbol}"
+               onchange="onParamChange()" style="width: 120px;">
+        <datalist id="symbol-options"></datalist>
+        
+        <select id="interval-select" onchange="onParamChange()">
+            <option value="1m">1 分鐘</option>
+            <option value="5m">5 分鐘</option>
+            <option value="15m">15 分鐘</option>
+            <option value="1h">1 小時</option>
+            <option value="4h">4 小時</option>
+            <option value="1d">1 天</option>
+        </select>
+        <label style="font-size: 14px; display:flex; align-items:center; cursor:pointer; color:#d1d4dc; margin-left: 5px;" title="顯示/隱藏成交量">
+            <input type="checkbox" id="chk-show-volume" checked onchange="toggleVolume()" style="margin-right:4px; width:auto;"> 成交量
+        </label>
+    </div>
+    <!-- Drawing Toolbar -->
+    <div id="drawing-toolbar" style="display:flex; gap:5px; align-items:center; border-left: 1px solid #555; padding-left: 10px;">
+        <button id="tool-cursor" class="tool-btn active" onclick="setTool('cursor')" title="選擇/移動 (Select/Move)">✋</button>
+        <button id="tool-trend" class="tool-btn" onclick="setTool('trend')" title="趨勢線 (Trend Line)">📉</button>
+        <button id="tool-horizontal" class="tool-btn" onclick="setTool('horizontal')" title="水平線 (Horizontal Line)">➖</button>
+        <button class="tool-btn secondary" onclick="drawingManager.clearAll()" title="全部清除 (Clear All)">🗑️</button>
+    </div>
+    <!-- Backtest Controls -->
+    <div id="backtest-controls" style="display:none; gap:10px; align-items:center;">
+        <input type="datetime-local" id="bt-start" title="開始時間" onchange="startBacktest()">
+        
+        <label style="font-size: 12px; display:flex; align-items:center; cursor:pointer; color:#bbb;">
+            <input type="checkbox" id="chk-use-agg-trade" style="margin-right:4px;" checked onchange="startBacktest()"> 精確回放 (AggTrade)
+        </label>
+        
+        <div style="border-left: 1px solid #555; height: 20px; margin: 0 5px;"></div>
+        
+        <button id="btn-play" onclick="togglePlay()" class="secondary">▶ 播放</button>
+        <select id="play-speed" title="播放速度" onchange="updateSpeed()">
+            <option value="realtime_1" selected>Realtime (1x)</option>
+            <option value="realtime_1.5">Realtime (1.5x)</option>
+            <option value="realtime_2">Realtime (2x)</option>
+            <option value="realtime_3">Realtime (3x)</option>
+            <option value="realtime_10">Realtime (10x)</option>
+            <option value="realtime_60" >Realtime (60x)</option>
+            <option value="realtime_120">Realtime (120x)</option>
+            <option value="realtime_300">Realtime (300x)</option>
+            <option value="realtime_1000">Realtime (1000x)</option>
+            <option value="1000">1 秒/根 (跳躍)</option>
+        </select>
+        <div id="countdown" style="font-family: monospace; color: #ffa726; min-width: 60px;"></div>
+        <span style="font-size: 12px; color: #888; border: 1px solid #555; padding: 2px 5px; border-radius: 4px;">按 ⬅ ➡ 鍵切換</span>
+    </div>
+    <div id="status" style="margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; padding-right: 15px; font-family: 'Consolas', 'Monaco', monospace;">準備就緒</div>
+</div>
+<!-- Trading Panel (Backtest Only) -->
+<div id="trading-panel">
+    
+    <div style="display:flex; gap: 5px; align-items: center;">
+        <label>Price:</label>
+        <input type="number" id="limit-price-input" placeholder="Limit Px" step="0.01" style="width: 80px; padding: 4px; background: #363c4e; color: #fff; border: 1px solid #4a4a4a; border-radius: 4px;">
+    </div>
+    <div style="display:flex; gap: 5px; align-items: center;">
+        <label>Qty:</label>
+        <input type="number" id="trade-qty" value="1" min="0.0001" step="0.0001" style="width: 60px; padding: 4px; background: #363c4e; color: #fff; border: 1px solid #4a4a4a; border-radius: 4px;">
+    </div>
+    
+    <!-- Limit Buttons -->
+    <div style="display:flex; gap: 5px;">
+        <button onclick="placeOrder('buy', 'limit')" style="background-color: #26a69a; opacity: 0.9;">Lmt Buy</button>
+        <button onclick="placeOrder('sell', 'limit')" style="background-color: #ef5350; opacity: 0.9;">Lmt Sell</button>
+    </div>
+    <div style="border-left: 1px solid #444; height: 20px; margin: 0 5px;"></div>
+    <!-- Market Buttons -->
+    <div style="display:flex; gap: 5px;">
+        <button onclick="placeOrder('buy', 'market')" style="background-color: #26a69a;">Mkt Buy</button>
+        <button onclick="placeOrder('sell', 'market')" style="background-color: #ef5350;">Mkt Sell</button>
+    </div>
+    <button onclick="closePosition()" class="secondary">Close All</button>
+    <button onclick="generateReport()" class="secondary" title="View Trade History">📄 Report</button>
+    <button onclick="clearPendingOrders()" class="secondary" id="btn-cancel-orders" style="display:none;">Cancel Orders</button>
+    <div style="border-left: 1px solid #444; height: 20px; margin: 0 5px;"></div>
+    <div>持倉: <span id="pos-size" style="font-weight: bold;">0</span></div>
+    <div>均價: <span id="pos-price">0.00</span></div>
+    <div>未實現: <span id="pnl-unrealized">0.00 (0.00%)</span></div>
+    <div>已實現: <span id="pnl-realized" style="font-weight: bold;">0.00</span></div>
+</div>
+<div id="chart-container">
+    <div id="loading" class="loading">正在載入資料...</div>
+    <svg id="drawing-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:10; pointer-events:none; display:block;"></svg>
+</div>
+<!-- Report Modal -->
+<div id="report-modal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" onclick="closeReport()">&times;</span>
+        <h2>回測報告 (Backtest Report)</h2>
+        
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div>總交易次數</div>
+                <div id="report-total-trades">0</div>
+            </div>
+            <div class="stat-box">
+                <div>勝率 (贏/輸)</div>
+                <div id="report-win-rate">0% (0/0)</div>
+            </div>
+            <div class="stat-box">
+                <div>獲利因子 (PF)</div>
+                <div id="report-profit-factor">0.00</div>
+            </div>
+            <div class="stat-box">
+                <div>賺賠比 (RR)</div>
+                <div id="report-rr-ratio">0.00</div>
+            </div>
+            <div class="stat-box">
+                <div>總已實現損益</div>
+                <div id="report-total-pnl">0.00</div>
+            </div>
+            <div class="stat-box">
+                <div>總成交手續費</div>
+                <div id="report-total-fees">0.00</div>
+            </div>
+            <div class="stat-box">
+                <div>未實現損益</div>
+                <div id="report-unrealized">0.00</div>
+            </div>
+        </div>
+        <h3>交易紀錄 (Transaction Log)</h3>
+        <div style="max-height: 400px; overflow-y: auto;">
+            <table id="report-table">
+                <thead>
+                    <tr>
+                        <th>時間 (Time)</th>
+                        <th>類型 (Type)</th>
+                        <th>價格 (Price)</th>
+                        <th>數量 (Qty)</th>
+                        <th>手續費 (Fee)</th>
+                        <th>已實現損益 (Realized PnL)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+    // --- 配置 ---
+    let currentSymbol = 'BTCUSDT';
+    let currentInterval = '1m';
+    const LIMIT = 1000;
+    const MAKER_FEE = 0.0001; // 0.01%
+    const TAKER_FEE = 0.0006; // 0.06%
+    
+    // --- 全域變數 ---
+    let chart;
+    let candleSeries;
+    let volumeSeries;
+    let currentData = [];
+    let ws = null; // WebSocket 實例
+    let latestRealtimePrice = 0;
+    // --- Backtest 變數 ---
+    let currentMode = 'realtime'; // 'realtime' or 'backtest'
+    let backtestData = [];
+    let backtestIndex = 0;
+    let isLoadingMore = false; // Prevent multiple fetches (Right/Future)
+    let isPreloadingHistory = false; // Prevent multiple fetches (Left/Past)
+    
+    // --- Playback 變數 ---
+    let isPlaying = false;
+    let playIntervalId = null;
+    let playSpeed = 'realtime_10'; // Default
+    let countdownIntervalId = null;
+    let nextStepTime = 0;
+    
+    // Tick Replay & Cache
+    let tickQueue = [];
+    let isFetchingTicks = false;
+    let currentTickCandle = null;
+    let replayBaseTime = 0; // Wall clock start time for current bar replay
+    let simBaseTime = 0;    // Simulation start time (seconds) for current bar
+    const tickCache = new Map(); // timestamp -> tick array
+    const TICK_CACHE_SIZE = 50; // Keep limited amount of tick data
+    // --- Trading 變數 ---
+    let tradingState = {
+        realtime: {}, // Map<Symbol, State>
+        backtest: {}  // Map<Symbol, State>
+    };
+    function getDefaultState() {
+        return {
+            positionSize: 0,
+            entryPrice: 0,
+            realizedPnL: 0,
+            history: [],
+            orders: []
+        };
+    }
+    
+    // Shortcuts for current active state (updated in switchMode)
+    let positionSize = 0;
+    let entryPrice = 0;
+    let realizedPnL = 0;
+    let tradeHistory = []; 
+    let pendingOrders = []; 
+    function syncGlobalToState() {
+        if (!tradingState[currentMode][currentSymbol]) {
+            tradingState[currentMode][currentSymbol] = getDefaultState();
+        }
+        tradingState[currentMode][currentSymbol] = {
+            positionSize,
+            entryPrice,
+            realizedPnL,
+            history: tradeHistory,
+            orders: pendingOrders
+        };
+    }
+    function syncStateToGlobal() {
+        let s = tradingState[currentMode][currentSymbol];
+        if (!s) {
+            s = getDefaultState();
+            tradingState[currentMode][currentSymbol] = s;
+        }
+        positionSize = s.positionSize;
+        entryPrice = s.entryPrice;
+        realizedPnL = s.realizedPnL;
+        tradeHistory = s.history;
+        pendingOrders = s.orders;
+        
+        // Restore pending order lines visual
+        // Note: Lines were removed from chart on mode switch (via clearing series data)
+        // We need to recreate them if they exist in state.
+        // Actually, lines are object references. If series is cleared, references are invalid?
+        // Yes, series.setData([]) clears everything.
+        // We need to re-add price lines for pending orders.
+        restorePendingOrderLines();
+        updateCancelButton();
+        updateTradingUI();
+    }
+    
+    function restorePendingOrderLines() {
+        pendingOrders.forEach(o => {
+            // Re-create the line object
+            const color = o.side === 'buy' ? '#26a69a' : '#ef5350';
+            o.line = candleSeries.createPriceLine({
+                price: o.price,
+                color: color,
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: `${o.side.toUpperCase()} ${o.qty}`,
+            });
+        });
+        updateCancelButton();
+    }
+    function clearPendingOrders() {
+        pendingOrders.forEach(o => {
+            if (o.line) candleSeries.removePriceLine(o.line);
+        });
+        pendingOrders = [];
+        updateCancelButton();
+    }
+    function updateCancelButton() {
+        const btn = document.getElementById('btn-cancel-orders');
+        if (pendingOrders.length > 0) {
+            btn.style.display = 'block';
+            btn.innerText = `Cancel Orders (${pendingOrders.length})`;
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+    // --- Drawing System ---
+    let drawingManager;
+    let currentTool = 'cursor'; // cursor, trend, horizontal
+    class DrawingManager {
+        constructor(chart, series, svgElement, container) {
+            this.chart = chart;
+            this.series = series;
+            this.svg = svgElement;
+            this.container = container;
+            this.drawings = []; // { id, type, points: [{time, price}], selected }
+            this.activeDrawing = null; // drawing currently being created
+            this.dragState = null; // { drawingId, pointIndex, startX, startY, startPrice, startTime }
+            
+            this.bindEvents();
+            
+            // Sync on scroll/zoom
+            this.chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+                this.render();
+            });
+            
+            // Sync on resize
+            new ResizeObserver(() => this.render()).observe(this.container);
+        }
+        bindEvents() {
+            this.container.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+            this.container.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+            document.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+            document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        }
+        getCoords(e) {
+            const rect = this.container.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const time = this.chart.timeScale().coordinateToTime(x) || this.guessTimeFromX(x);
+            const price = this.series.coordinateToPrice(y);
+            
+            return { x, y, time, price };
+        }
+        
+        guessTimeFromX(x) {
+            const visibleRange = this.chart.timeScale().getVisibleLogicalRange();
+            if (!visibleRange) return null;
+            return null; 
+        }
+        handleMouseDown(e) {
+            if (e.button !== 0) return; // Only Left Click
+            const coords = this.getCoords(e);
+            
+            // --- Click to Fill Price Logic ---
+            if (currentTool === 'cursor' && coords.price) {
+                // If not hitting any drawing handle or line, update price input
+                const handleHit = this.hitTestHandles(coords.x, coords.y);
+                const lineHit = this.hitTestLines(coords.x, coords.y);
+                
+                if (!handleHit && !lineHit) {
+                    const priceInput = document.getElementById('limit-price-input');
+                    if (priceInput) {
+                        priceInput.value = parseFloat(coords.price).toFixed(2);
+                        // Optional: Highlight input briefly
+                        priceInput.style.backgroundColor = '#4a4a4a';
+                        setTimeout(() => priceInput.style.backgroundColor = '#363c4e', 200);
+                    }
+                }
+            }
+            // ---------------------------------
+            
+            const handleHit = this.hitTestHandles(coords.x, coords.y);
+            if (handleHit) {
+                this.dragState = {
+                    mode: 'resize',
+                    drawingId: handleHit.drawingId,
+                    pointIndex: handleHit.pointIndex,
+                };
+                this.selectDrawing(handleHit.drawingId);
+                return;
+            }
+            const lineHit = this.hitTestLines(coords.x, coords.y);
+            if (lineHit) {
+                this.selectDrawing(lineHit.id);
+                this.dragState = {
+                    mode: 'move',
+                    drawingId: lineHit.id,
+                    startX: coords.x,
+                    startY: coords.y,
+                    originalPoints: JSON.parse(JSON.stringify(lineHit.points))
+                };
+                return;
+            }
+            if (!coords.time || !coords.price) return;
+            if (currentTool !== 'cursor') {
+                this.deselectAll();
+                
+                if (currentTool === 'trend') {
+                    const id = Date.now();
+                    this.activeDrawing = {
+                        id,
+                        type: 'trend',
+                        points: [
+                            { time: coords.time, price: coords.price },
+                            { time: coords.time, price: coords.price } 
+                        ],
+                        selected: true
+                    };
+                    this.drawings.push(this.activeDrawing);
+                } else if (currentTool === 'horizontal') {
+                    const id = Date.now();
+                    this.activeDrawing = {
+                        id,
+                        type: 'horizontal',
+                        points: [
+                            { time: coords.time, price: coords.price }
+                        ],
+                        selected: true
+                    };
+                    this.drawings.push(this.activeDrawing);
+                    this.activeDrawing = null; 
+                }
+                this.render();
+            } else {
+                this.deselectAll();
+            }
+        }
+        handleMouseMove(e) {
+            const coords = this.getCoords(e);
+            
+            const hit = this.hitTestHandles(coords.x, coords.y) || this.hitTestLines(coords.x, coords.y);
+            const isDrawingMode = currentTool !== 'cursor';
+            const isDragging = !!this.dragState || !!this.activeDrawing;
+            
+            if (isDrawingMode || hit || isDragging) {
+                this.svg.style.pointerEvents = 'all';
+                
+                if (this.hitTestHandles(coords.x, coords.y)) this.container.style.cursor = 'grab';
+                else if (this.hitTestLines(coords.x, coords.y)) this.container.style.cursor = 'move';
+                else if (isDrawingMode) this.container.style.cursor = 'crosshair';
+                else this.container.style.cursor = 'default';
+                
+            } else {
+                this.svg.style.pointerEvents = 'none';
+                this.container.style.cursor = 'default';
+            }
+            if (this.activeDrawing && this.activeDrawing.type === 'trend') {
+                 if (coords.time) {
+                     this.activeDrawing.points[1] = { time: coords.time, price: coords.price };
+                     this.render();
+                 }
+                 return;
+            }
+            if (this.dragState) {
+                const drawing = this.drawings.find(d => d.id === this.dragState.drawingId);
+                if (!drawing) return;
+                if (this.dragState.mode === 'resize') {
+                    if (coords.time && coords.price) {
+                        drawing.points[this.dragState.pointIndex] = { time: coords.time, price: coords.price };
+                        if (drawing.type === 'horizontal') {
+                            drawing.points[0].price = coords.price;
+                        }
+                    }
+                } else if (this.dragState.mode === 'move') {
+                    if (coords.time && coords.price) {
+                        const priceDiff = coords.price - this.series.coordinateToPrice(this.dragState.startY);
+                        
+                        drawing.points.forEach((p, i) => {
+                            p.price = this.dragState.originalPoints[i].price + priceDiff;
+                        });
+                        
+                        this.dragState.startY = coords.y;
+                        this.dragState.originalPoints = JSON.parse(JSON.stringify(drawing.points));
+                    }
+                }
+                this.render();
+                return;
+            }
+        }
+        handleMouseUp(e) {
+            if (this.activeDrawing) {
+                this.activeDrawing = null; 
+            }
+            this.dragState = null;
+            this.render();
+        }
+        handleKeyDown(e) {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && !this.activeDrawing) {
+                const selected = this.drawings.find(d => d.selected);
+                if (selected) {
+                    this.removeDrawing(selected.id);
+                }
+            }
+        }
+        render() {
+            this.svg.innerHTML = ''; 
+            const width = this.container.clientWidth;
+            const height = this.container.clientHeight;
+            
+            this.drawings.forEach(d => {
+                const color = d.selected ? '#2962ff' : '#26a69a';
+                const strokeWidth = d.selected ? 3 : 2;
+                if (d.type === 'trend') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    const p2 = this.pointToXY(d.points[1]);
+                    
+                    if (p1 && p2) {
+                        // Infinite Line
+                        let x1, y1, x2, y2;
+                        if (Math.abs(p1.x - p2.x) < 0.01) {
+                            x1 = p1.x; y1 = 0;
+                            x2 = p1.x; y2 = height;
+                        } else {
+                            const m = (p2.y - p1.y) / (p2.x - p1.x);
+                            const c = p1.y - m * p1.x;
+                            x1 = 0; y1 = c;
+                            x2 = width; y2 = m * width + c;
+                        }
+                        this.createSvgLine(x1, y1, x2, y2, color, strokeWidth);
+                        
+                        if (d.selected) {
+                            this.createSvgCircle(p1.x, p1.y, 4, '#fff', color);
+                            this.createSvgCircle(p2.x, p2.y, 4, '#fff', color);
+                        }
+                    }
+                } else if (d.type === 'horizontal') {
+                    // Use Native PriceLine
+                    const price = d.points[0].price;
+                    const hColor = d.selected ? '#2962ff' : '#72a1ff'; // 藍色系
+                    const hStyle = LightweightCharts.LineStyle.Dashed; // 虛線
+                    
+                    if (!d.priceLine) {
+                        d.priceLine = this.series.createPriceLine({
+                            price: price,
+                            color: hColor,
+                            lineWidth: 1, // 細線
+                            lineStyle: hStyle,
+                            axisLabelVisible: true,
+                            title: '',
+                        });
+                    } else {
+                        d.priceLine.applyOptions({
+                            price: price,
+                            color: hColor,
+                            lineWidth: 1,
+                            lineStyle: hStyle
+                        });
+                    }
+                    // Only draw selection handle in SVG
+                    const p1 = this.pointToXY(d.points[0]);
+                    if (p1 && d.selected) {
+                         this.createSvgCircle(width - 20, p1.y, 4, '#fff', hColor);
+                    }
+                }
+            });
+        }
+        
+        pointToXY(point) {
+            const x = this.chart.timeScale().timeToCoordinate(point.time);
+            const y = this.series.priceToCoordinate(point.price);
+            if (x === null || y === null) return null;
+            return { x, y };
+        }
+        createSvgLine(x1, y1, x2, y2, color, width, isDash = false) {
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", x1);
+            line.setAttribute("y1", y1);
+            line.setAttribute("x2", x2);
+            line.setAttribute("y2", y2);
+            line.setAttribute("stroke", color);
+            line.setAttribute("stroke-width", width);
+            if (isDash) line.setAttribute("stroke-dasharray", "5,5");
+            this.svg.appendChild(line);
+        }
+        createSvgCircle(cx, cy, r, fill, stroke) {
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", cx);
+            circle.setAttribute("cy", cy);
+            circle.setAttribute("r", r);
+            circle.setAttribute("fill", fill);
+            circle.setAttribute("stroke", stroke);
+            circle.setAttribute("stroke-width", 2);
+            this.svg.appendChild(circle);
+        }
+        
+        createSvgText(x, y, text, color) {
+            const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            txt.setAttribute("x", x);
+            txt.setAttribute("y", y);
+            txt.setAttribute("fill", color);
+            txt.setAttribute("font-size", "12");
+            txt.textContent = text;
+            this.svg.appendChild(txt);
+        }
+        hitTestHandles(x, y) {
+            const THRESHOLD = 8;
+            for (const d of this.drawings) {
+                if (!d.selected) continue;
+                
+                if (d.type === 'trend') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    const p2 = this.pointToXY(d.points[1]);
+                    
+                    if (p1 && Math.hypot(p1.x - x, p1.y - y) < THRESHOLD) return { drawingId: d.id, pointIndex: 0 };
+                    if (p2 && Math.hypot(p2.x - x, p2.y - y) < THRESHOLD) return { drawingId: d.id, pointIndex: 1 };
+                } else if (d.type === 'horizontal') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    if (p1) {
+                         const handleX = this.container.clientWidth - 20;
+                         if (Math.hypot(handleX - x, p1.y - y) < THRESHOLD) return { drawingId: d.id, pointIndex: 0 };
+                    }
+                }
+            }
+            return null;
+        }
+        hitTestLines(x, y) {
+            const THRESHOLD = 5;
+            for (const d of this.drawings) {
+                if (d.type === 'trend') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    const p2 = this.pointToXY(d.points[1]);
+                    if (!p1 || !p2) continue;
+                    
+                    const dist = this.distToInfiniteLine({x, y}, p1, p2);
+                    if (dist < THRESHOLD) return d;
+                    
+                } else if (d.type === 'horizontal') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    if (p1 && Math.abs(p1.y - y) < THRESHOLD) return d;
+                }
+            }
+            return null;
+        }
+        distToInfiniteLine(p, v, w) {
+            const num = Math.abs((w.y - v.y)*p.x - (w.x - v.x)*p.y + w.x*v.y - w.y*v.x);
+            const den = Math.sqrt(Math.pow(w.y - v.y, 2) + Math.pow(w.x - v.x, 2));
+            if (den === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+            return num / den;
+        }
+        selectDrawing(id) {
+            this.drawings.forEach(d => d.selected = (d.id === id));
+            this.render();
+        }
+        deselectAll() {
+            this.drawings.forEach(d => d.selected = false);
+            this.render();
+        }
+        removeDrawing(id) {
+            const index = this.drawings.findIndex(d => d.id === id);
+            if (index !== -1) {
+                const d = this.drawings[index];
+                if (d.priceLine) {
+                    this.series.removePriceLine(d.priceLine);
+                }
+                this.drawings.splice(index, 1);
+                this.render();
+            }
+        }
+        clearAll() {
+            if(confirm('確定清除所有繪圖嗎？')) {
+                this.drawings.forEach(d => {
+                    if (d.priceLine) {
+                        this.series.removePriceLine(d.priceLine);
+                    }
+                });
+                this.drawings = [];
+                this.render();
+            }
+        }
+    }
+    
+    function setTool(tool) {
+        currentTool = tool;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`tool-${tool}`).classList.add('active');
+        
+        if (drawingManager) drawingManager.deselectAll();
+    }
+    function toggleVolume() {
+        const chk = document.getElementById('chk-show-volume');
+        if (volumeSeries) {
+            volumeSeries.applyOptions({
+                visible: chk.checked
+            });
+        }
+    }
+    // --- 初始化圖表 ---
+    function initChart() {
+        const container = document.getElementById('chart-container');
+        chart = LightweightCharts.createChart(container, {
+            layout: {
+                background: { type: 'solid', color: '#1e1e1e' },
+                textColor: '#d1d4dc',
+            },
+            grid: {
+                vertLines: { color: '#2B2B43' },
+                horzLines: { color: '#2B2B43' },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: false,
+                rightOffset: 50,
+            },
+        });
+        candleSeries = chart.addCandlestickSeries({
+            upColor: '#26a69a',
+            downColor: '#ef5350',
+            borderVisible: false,
+            wickUpColor: '#26a69a',
+            wickDownColor: '#ef5350',
+        });
+        volumeSeries = chart.addHistogramSeries({
+            color: '#26a69a',
+            priceFormat: {
+                type: 'volume',
+            },
+            priceScaleId: 'volume', // Set to a unique ID to make it an overlay
+        });
+        chart.priceScale('volume').applyOptions({
+            scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+            },
+        });
+        const svgLayer = document.getElementById('drawing-overlay');
+        drawingManager = new DrawingManager(chart, candleSeries, svgLayer, container);
+        window.addEventListener('resize', () => {
+            chart.resize(container.clientWidth, container.clientHeight);
+            drawingManager.render();
+        });
+        document.addEventListener('keydown', handleBacktestKey);
+        
+        const now = new Date();
+        const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        document.getElementById('bt-start').value = toLocalISO(past);
+        
+        // Infinite Scroll (Left)
+        chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChanged);
+        
+        // Initial Fetch of Symbols
+        fetchAndPopulateSymbols();
+    }
+    
+    // --- 符號列表獲取 ---
+    async function fetchAndPopulateSymbols() {
+        try {
+            const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+            const data = await res.json();
+            
+            // Filter USDT pairs and sort by volume (keeping sort for relevance, but showing all)
+            const usdtPairs = data
+                .filter(t => t.symbol.endsWith('USDT'))
+                .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+                
+            const datalist = document.getElementById('symbol-options');
+            datalist.innerHTML = '';
+            
+            usdtPairs.forEach(t => {
+                const option = document.createElement('option');
+                option.value = t.symbol;
+                datalist.appendChild(option);
+            });
+            
+            // Set default if empty
+            const input = document.getElementById('symbol-input');
+            if (!input.value) {
+                input.value = 'BTCUSDT';
+            }
+            
+        } catch (e) {
+            console.error("Failed to fetch symbols", e);
+        }
+    }
+    
+    function onVisibleLogicalRangeChanged(newRange) {
+        if (!newRange) return;
+        if (newRange.from < 10) {
+            checkAndLoadHistoryLeft();
+        }
+    }
+    async function checkAndLoadHistoryLeft() {
+        if (isPreloadingHistory) return;
+        
+        let oldestTime = 0;
+        
+        if (currentMode === 'realtime') {
+            if (currentData.length === 0) return;
+            oldestTime = currentData[0].time;
+        } else {
+            if (backtestData.length === 0) return;
+            oldestTime = backtestData[0].time;
+        }
+        
+        isPreloadingHistory = true;
+        
+        const endTime = (oldestTime * 1000) - 1;
+        const api = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=${currentInterval}&endTime=${endTime}&limit=1000`;
+        
+        try {
+            const start = performance.now();
+            const response = await fetch(api);
+            const data = await response.json();
+            const duration = (performance.now() - start).toFixed(2);
+            
+            if (Array.isArray(data) && data.length > 0) {
+                console.log(`[Infinite Scroll] Fetched ${data.length} older klines in ${duration}ms`);
+                
+                const newCandles = data.map(d => ({
+                    time: d[0] / 1000,
+                    open: parseFloat(d[1]),
+                    high: parseFloat(d[2]),
+                    low: parseFloat(d[3]),
+                    close: parseFloat(d[4]),
+                    volume: parseFloat(d[5])
+                }));
+                
+                if (currentMode === 'realtime') {
+                    currentData = newCandles.concat(currentData);
+                    candleSeries.setData(currentData);
+                    volumeSeries.setData(currentData.map(d => ({
+                        time: d.time,
+                        value: d.volume,
+                        color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                    })));
+                } else {
+                    backtestData = newCandles.concat(backtestData);
+                    backtestIndex += newCandles.length;
+                    renderBacktest();
+                }
+            }
+        } catch (e) {
+            console.error("History fetch failed", e);
+        } finally {
+            isPreloadingHistory = false;
+        }
+    }
+    
+    function toLocalISO(date) {
+        const pad = (n) => n < 10 ? '0' + n : n;
+        return date.getFullYear() + '-' + 
+               pad(date.getMonth() + 1) + '-' + 
+               pad(date.getDate()) + 'T' + 
+               pad(date.getHours()) + ':' + 
+               pad(date.getMinutes());
+    }
+    function switchMode(mode) {
+        // Save current state before switching
+        syncGlobalToState();
+        
+        // Remove lines from chart before switching (visual cleanup)
+        // They will be restored by syncStateToGlobal if they exist in the new mode
+        pendingOrders.forEach(o => {
+            if (o.line) candleSeries.removePriceLine(o.line);
+        });
+        currentMode = mode;
+        
+        // Load new state
+        syncStateToGlobal();
+        
+        const btnRt = document.getElementById('btn-mode-rt');
+        const btnBt = document.getElementById('btn-mode-bt');
+        const btControls = document.getElementById('backtest-controls');
+        const tradePanel = document.getElementById('trading-panel');
+        
+        // Always show trading panel
+        tradePanel.style.display = 'flex';
+        if (currentMode === 'realtime') {
+            btnRt.classList.remove('secondary');
+            btnBt.classList.add('secondary');
+            
+            btControls.style.display = 'none';
+            stopPlay(); 
+            onParamChange(); 
+        } else {
+            btnRt.classList.add('secondary');
+            btnBt.classList.remove('secondary');
+            
+            btControls.style.display = 'flex';
+            
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            document.getElementById('status').innerText = '回測模式：請選擇時間並開始';
+            
+            // Do NOT reset state here. User might be switching back to continue backtest.
+            candleSeries.setData([]);
+            volumeSeries.setData([]);
+            if (drawingManager) drawingManager.render();
+            
+            const startInput = document.getElementById('bt-start').value;
+            if (startInput) {
+                // If we have history, we might not need to fetch again, but for now let's fetch 
+                // to be safe but PRESERVE the trading state (PnL, Orders)
+                startBacktest(true);
+            } else {
+                document.getElementById('status').innerText = '回測模式：請選擇時間';
+            }
+        }
+        
+        updateTradingUI(); // Refresh UI with loaded state
+        // 自動調整圖表尺寸以適應佈局變化 (Critical: window.resize doesn't fire on element toggle)
+        requestAnimationFrame(() => {
+            if (chart) {
+                const container = document.getElementById('chart-container');
+                chart.resize(container.clientWidth, container.clientHeight);
+                if (drawingManager) drawingManager.render();
+            }
+        });
+    }
+    function onParamChange() {
+        const symbolInput = document.getElementById('symbol-input');
+        const intervalSelect = document.getElementById('interval-select');
+        
+        let val = symbolInput.value.trim().toUpperCase();
+        if (!val) {
+            val = 'BTCUSDT';
+            symbolInput.value = val;
+        }
+        
+        // Save state for OLD symbol
+        syncGlobalToState();
+        // Visual cleanup for OLD symbol
+        pendingOrders.forEach(o => {
+            if (o.line) candleSeries.removePriceLine(o.line);
+        });
+        currentSymbol = val;
+        currentInterval = intervalSelect.value;
+        // Load state for NEW symbol
+        syncStateToGlobal();
+        if (currentMode === 'realtime') {
+            startRealtimeMode();
+        } else {
+            // 在回測模式下，變更商品或週期後立即自動重啟回測
+            if (document.getElementById('bt-start').value) {
+                startBacktest();
+            } else {
+                document.getElementById('status').innerText = `已選擇 ${currentSymbol}，請選擇時間`;
+            }
+        }
+    }
+    function startRealtimeMode() {
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+        latestRealtimePrice = 0;
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('status').innerText = `切換至 ${currentSymbol} (${currentInterval})...`;
+        fetchHistoricalData();
+    }
+    async function fetchHistoricalData() {
+        const api = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=${currentInterval}&limit=${LIMIT}`;
+        
+        try {
+            const start = performance.now();
+            console.log(`[Connection] Fetching initial realtime data from ${api}`);
+            const response = await fetch(api);
+            const data = await response.json();
+            const duration = (performance.now() - start).toFixed(2);
+            
+            console.log(`[Connection] Fetched ${data.length} klines in ${duration}ms`);
+            
+            const formattedData = data.map(d => ({
+                time: d[0] / 1000,
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4]),
+                volume: parseFloat(d[5])
+            }));
+            currentData = formattedData;
+            candleSeries.setData(currentData);
+            volumeSeries.setData(currentData.map(d => ({
+                time: d.time,
+                value: d.volume,
+                color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+            })));
+            
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('status').innerText = '歷史資料載入完成，連線 WebSocket...';
+            
+            startWebSocket();
+        } catch (error) {
+            console.error('Fetch error:', error);
+            document.getElementById('status').innerText = '錯誤: 無法獲取資料';
+            document.getElementById('loading').style.display = 'none';
+        }
+    }
+    function startWebSocket() {
+        if (ws) ws.close();
+        const s = currentSymbol.toLowerCase();
+        const i = currentInterval;
+        // Use Combined Stream for Kline + AggTrade (for realtime ticks)
+        const wsUrl = `wss://stream.binance.com:9443/stream?streams=${s}@kline_${i}/${s}@aggTrade`;
+        
+        console.log(`[Connection] Connecting to WebSocket: ${wsUrl}`);
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+             document.getElementById('status').innerText = `${currentSymbol} ${currentInterval}: 連線成功 (Waiting for data...) 🟢`;
+             console.log("[Connection] WebSocket Connected");
+        };
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            const type = msg.data.e; // 'kline' or 'aggTrade'
+            
+            if (type === 'kline') {
+                const k = msg.data.k;
+                const candle = {
+                    time: k.t / 1000,
+                    open: parseFloat(k.o),
+                    high: parseFloat(k.h),
+                    low: parseFloat(k.l),
+                    close: parseFloat(k.c),
+                    volume: parseFloat(k.v)
+                };
+                latestRealtimePrice = candle.close;
+                candleSeries.update(candle);
+                volumeSeries.update({
+                    time: candle.time,
+                    value: candle.volume,
+                    color: candle.close >= candle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                });
+                
+                // Update local data cache
+                const lastCandle = currentData[currentData.length - 1];
+                if (lastCandle && lastCandle.time === candle.time) {
+                    currentData[currentData.length - 1] = candle;
+                } else {
+                    currentData.push(candle);
+                }
+                
+                updateTradingUI();
+                
+            } else if (type === 'aggTrade') {
+                const trade = msg.data;
+                const price = parseFloat(trade.p);
+                const quantity = parseFloat(trade.q);
+                const time = trade.E; // Event time (ms)
+                
+                latestRealtimePrice = price;
+                // Check for Limit Order Fills in Realtime
+                checkPendingOrders(price, price);
+                // 1. Update Status Bar immediately
+                document.getElementById('status').innerText = `${currentSymbol} ${currentInterval}: ${formatPrice(price)} 🟢 (${formatDateWithSeconds(new Date(time))})`;
+                
+                // 2. Smoother Chart Update (Optional but better UX)
+                // We update the current candle's close/high/low in between kline updates
+                if (currentData.length > 0) {
+                    const currentCandle = currentData[currentData.length - 1];
+                    const tradeTimeSec = Math.floor(time / 1000);
+                    
+                    if (tradeTimeSec >= currentCandle.time) {
+                        currentCandle.close = price;
+                        if (price > currentCandle.high) currentCandle.high = price;
+                        if (price < currentCandle.low) currentCandle.low = price;
+                        
+                        // We could track volume, but since we reset from kline, 
+                        // we need to be careful. For now let's just update price.
+                        // Actually, adding trade volume is fine.
+                        currentCandle.volume = (currentCandle.volume || 0) + quantity;
+                        
+                        candleSeries.update(currentCandle);
+                        volumeSeries.update({
+                            time: currentCandle.time,
+                            value: currentCandle.volume,
+                            color: currentCandle.close >= currentCandle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                        });
+                    }
+                }
+                updateTradingUI();
+            }
+        };
+        ws.onclose = () => {
+             if (currentMode === 'realtime' && ws && ws.readyState === WebSocket.CLOSED) {
+                 console.log("[Connection] WS Disconnected");
+             }
+        };
+    }
+    
+    function formatPrice(price) {
+        return parseFloat(price).toFixed(2);
+    }
+    async function startBacktest(preserveState = false) {
+        stopPlay();
+        if (ws) ws.close();
+        
+        const startInput = document.getElementById('bt-start').value;
+        
+        if (!startInput) {
+            alert("請選擇開始時間");
+            return;
+        }
+        const userStartTime = new Date(startInput).getTime();
+        
+        const intervalMs = getIntervalMs(currentInterval);
+        const bufferMs = 240 * intervalMs;
+        const fetchStartTime = userStartTime - bufferMs;
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('status').innerText = `載入回測數據 (含前 240 K線緩衝)...`;
+        console.log(`[Backtest] Request Start: ${new Date(userStartTime).toLocaleString()}`);
+        console.log(`[Backtest] Buffer Start : ${new Date(fetchStartTime).toLocaleString()} (-240 bars)`);
+        if (!preserveState) {
+            resetTradingState();
+        }
+        backtestData = [];
+        tickCache.clear();
+        const initialData = await fetchKlinesLoop(fetchStartTime, 1000); 
+        if (initialData.length === 0) {
+            document.getElementById('status').innerText = '無數據';
+            document.getElementById('loading').style.display = 'none';
+            return;
+        }
+        backtestData = initialData;
+        const userTimeSec = userStartTime / 1000;
+        let foundIndex = backtestData.findIndex(d => d.time >= userTimeSec);
+        
+        if (foundIndex === -1) {
+            foundIndex = backtestData.length - 1; 
+        }
+        backtestIndex = foundIndex;
+        console.log(`[Backtest] Loaded ${backtestData.length} candles. Starting at index ${backtestIndex} (${new Date(backtestData[backtestIndex].time * 1000).toLocaleString()})`);
+        
+        renderBacktest();
+        
+        document.getElementById('loading').style.display = 'none';
+        updateStatusTime();
+        document.body.focus();
+    }
+    async function fetchKlinesLoop(startTime, limit) {
+        let api = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=${currentInterval}&startTime=${startTime}&limit=${limit}`;
+        
+        const start = performance.now();
+        console.log(`[Connection] GET ${api}`);
+        
+        try {
+            const response = await fetch(api);
+            const data = await response.json();
+            const duration = (performance.now() - start).toFixed(2);
+            
+            if (!Array.isArray(data)) return [];
+            
+            console.log(`[Connection] Fetched ${data.length} klines in ${duration}ms`);
+            return data.map(d => ({
+                time: d[0] / 1000,
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4]),
+                volume: parseFloat(d[5])
+            }));
+        } catch (e) {
+            console.error("Error fetching klines", e);
+            return [];
+        }
+    }
+    async function checkAndLoadMoreHistory() {
+        if (isLoadingMore) return;
+        if (backtestData.length - backtestIndex < 200) {
+            isLoadingMore = true;
+            const lastCandle = backtestData[backtestData.length - 1];
+            const nextStartTime = (lastCandle.time * 1000) + getIntervalMs(currentInterval);
+            
+            console.log(`[Pagination] Pre-loading more history from ${new Date(nextStartTime).toLocaleString()}`);
+            
+            const moreData = await fetchKlinesLoop(nextStartTime, 1000);
+            
+            if (moreData.length > 0) {
+                if (moreData[0].time === lastCandle.time) {
+                    moreData.shift();
+                }
+                backtestData = backtestData.concat(moreData);
+                console.log(`[Pagination] Appended ${moreData.length} new candles. Total: ${backtestData.length}`);
+            }
+            isLoadingMore = false;
+        }
+    }
+    function renderBacktest() {
+        if (backtestData.length === 0) return;
+        
+        if (backtestIndex < 0) backtestIndex = 0;
+        if (backtestIndex >= backtestData.length) backtestIndex = backtestData.length - 1;
+        const visibleData = backtestData.slice(0, backtestIndex + 1);
+        candleSeries.setData(visibleData);
+        volumeSeries.setData(visibleData.map(d => ({
+            time: d.time,
+            value: d.volume,
+            color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+        })));
+        
+        updateTradingUI(); 
+        
+        checkAndLoadMoreHistory();
+        
+        if (drawingManager) drawingManager.render();
+    }
+    function handleBacktestKey(e) {
+        if (currentMode === 'backtest') {
+             if (e.key === 'ArrowRight') {
+                 stopPlay();
+                 stepForward();
+             } else if (e.key === 'ArrowLeft') {
+                 stopPlay();
+                 stepBackward();
+             } else if (e.code === 'Space') { 
+                  e.preventDefault();
+                  togglePlay();
+             }
+        }
+    }
+    function stepForward() {
+        if (backtestIndex < backtestData.length - 1) {
+            backtestIndex++;
+            
+            const bar = backtestData[backtestIndex];
+            checkPendingOrders(bar.high, bar.low);
+            
+            renderBacktest();
+            updateStatusTime();
+        } else {
+            if (!isLoadingMore) {
+                stopPlay(); 
+                document.getElementById('status').innerText = `回測暫停 (等待數據或結束)`;
+            }
+        }
+    }
+    function stepBackward() {
+        if (backtestIndex > 0) {
+            backtestIndex--;
+            renderBacktest();
+            updateStatusTime();
+        }
+    }
+    
+    function updateStatusTime() {
+        if (currentMode !== 'backtest' || backtestData.length === 0) return;
+        
+        if (backtestIndex >= 0 && backtestIndex < backtestData.length) {
+             const bar = backtestData[backtestIndex];
+             if (!isPlaying || !playSpeed.startsWith('realtime')) {
+                 const dateStr = formatDateWithSeconds(new Date(bar.time * 1000));
+                 document.getElementById('status').innerText = `回測中: ${dateStr}`;
+             }
+        }
+    }
+    function togglePlay() {
+        if (isPlaying) {
+            stopPlay();
+        } else {
+            startPlay();
+        }
+    }
+    function startPlay() {
+        if (backtestData.length === 0) return;
+        isPlaying = true;
+        document.getElementById('btn-play').innerText = "⏸ 暫停";
+        document.getElementById('btn-play').classList.remove('secondary');
+        
+        updateSpeed();
+        scheduleNextStep();
+    }
+    function stopPlay() {
+        isPlaying = false;
+        document.getElementById('btn-play').innerText = "▶ 播放";
+        document.getElementById('btn-play').classList.add('secondary');
+        
+        if (playIntervalId) clearTimeout(playIntervalId);
+        if (countdownIntervalId) clearInterval(countdownIntervalId);
+        document.getElementById('countdown').innerText = "";
+        
+        tickQueue = [];
+        isFetchingTicks = false;
+        currentTickCandle = null;
+    }
+    
+    function updateSpeed() {
+        const select = document.getElementById('play-speed');
+        playSpeed = select.value;
+        
+        if (isPlaying) {
+            // Cancel current wait and restart loop with new speed immediately
+            if (playIntervalId) clearTimeout(playIntervalId);
+            if (countdownIntervalId) clearInterval(countdownIntervalId);
+            
+            scheduleNextStep();
+        }
+    }
+    async function scheduleNextStep() {
+        if (!isPlaying) return;
+        if (!playSpeed.startsWith('realtime')) {
+             const delay = parseInt(playSpeed);
+             nextStepTime = Date.now() + delay;
+             startCountdown(nextStepTime);
+             
+             playIntervalId = setTimeout(() => {
+                 stepForward();
+                 if (isPlaying) scheduleNextStep();
+             }, delay);
+             return;
+        }
+        if (tickQueue.length > 0) {
+            playNextTick();
+            return;
+        }
+        if (backtestIndex >= backtestData.length - 1) {
+            if (isLoadingMore) {
+                setTimeout(scheduleNextStep, 500);
+            } else {
+                stopPlay();
+                document.getElementById('status').innerText = `回測結束`;
+            }
+            return;
+        }
+        const nextBar = backtestData[backtestIndex + 1];
+        const nextBarKey = nextBar.time;
+        if (tickCache.has(nextBarKey)) {
+            // Check if complete (for 1s klines)? 
+            // If we are in non-aggTrade mode, ensure1sKlinesForBar ensures we have data up to endTime.
+            // But if there are gaps, we might have partial data. 
+            // We just play what we have.
+            
+            startTickReplayForBar(nextBar, tickCache.get(nextBarKey));
+            preloadNextTicks(backtestIndex + 2);
+            return;
+        }
+        if (isFetchingTicks) return;
+        isFetchingTicks = true;
+        document.getElementById('countdown').innerText = "Loading Ticks..."; 
+        
+        try {
+            console.log(`[Tick] Cache miss for ${nextBarKey}. Fetching now...`);
+            
+            if (document.getElementById('chk-use-agg-trade').checked) {
+                const ticks = await fetchSecondKlines(nextBar);
+                if (ticks && ticks.length > 0) {
+                    tickCache.set(nextBarKey, ticks);
+                    startTickReplayForBar(nextBar, ticks);
+                } else {
+                     // No ticks found? Skip bar replay
+                     stepForward();
+                     scheduleNextStep();
+                }
+            } else {
+                await preloadNextTicks(backtestIndex); // Use preload logic to ensure buffer
+                if (tickCache.has(nextBarKey)) {
+                    startTickReplayForBar(nextBar, tickCache.get(nextBarKey));
+                } else {
+                    stepForward();
+                    scheduleNextStep();
+                }
+            }
+            
+            isFetchingTicks = false;
+            if (!isPlaying) return; // Stopped during fetch
+            
+            // If we didn't start replay above (e.g. stepForward called), scheduleNextStep is already called.
+            // If we DID start replay, we don't need to do anything, playNextTick will loop.
+            // But we should preload for next.
+            preloadNextTicks(backtestIndex + 2);
+        } catch (e) {
+            console.error("Tick fetch failed", e);
+            isFetchingTicks = false;
+            stepForward();
+            scheduleNextStep();
+        }
+    }
+    // --- Playback State ---
+    let lastReplayedTickTime = 0;
+    async function preloadNextTicks(startIndex) {
+        const useAggTrade = document.getElementById('chk-use-agg-trade').checked;
+        
+        if (useAggTrade) {
+            const LOOKAHEAD = 3; 
+            for (let i = 0; i < LOOKAHEAD; i++) {
+                const idx = startIndex + i;
+                if (idx >= backtestData.length) break;
+                
+                const bar = backtestData[idx];
+                const key = bar.time;
+                
+                if (!tickCache.has(key)) {
+                    fetchSecondKlines(bar).then(ticks => {
+                        if (ticks && ticks.length > 0) {
+                            tickCache.set(key, ticks);
+                            manageTickCacheSize();
+                        }
+                    });
+                }
+            }
+            return;
+        }
+        // --- Non-AggTrade (1s Kline) Buffering Logic ---
+        // Ensure we have at least 1000 ticks buffered ahead of current playback
+        
+        let bufferedCount = 0;
+        let gapStartTime = -1;
+        const CHECK_LIMIT_BARS = 20; // Check up to 20 bars ahead
+        
+        // 1. Check current playing bar (partially played)
+        if (isPlaying && currentTickCandle) {
+             const barTime = currentTickCandle.time;
+             const cached = tickCache.get(barTime) || [];
+             // Count ticks that are NEWER than lastReplayedTickTime
+             const remaining = cached.filter(t => t.time > lastReplayedTickTime).length;
+             bufferedCount += remaining;
+             
+             // Check if this bar has a gap at the end
+             const duration = getIntervalMs(currentInterval) / 1000;
+             const expectedEnd = barTime + duration - 1;
+             let lastTickInCache = cached.length > 0 ? cached[cached.length - 1].time : barTime - 1;
+             
+             if (lastTickInCache < expectedEnd && gapStartTime === -1) {
+                 gapStartTime = lastTickInCache + 1;
+             }
+        }
+        // 2. Check future bars
+        // If we are playing, next bar is backtestIndex + 1
+        // If startIndex is passed, usage depends on caller. 
+        // Usually startIndex = backtestIndex + 1 (next bar) or +2.
+        
+        // Let's normalize: check from backtestIndex + 1
+        let startIdx = backtestIndex + 1;
+        
+        for (let i = 0; i < CHECK_LIMIT_BARS; i++) {
+            const idx = startIdx + i;
+            if (idx >= backtestData.length) break;
+            
+            const bar = backtestData[idx];
+            const cached = tickCache.get(bar.time) || [];
+            
+            bufferedCount += cached.length;
+            
+            const duration = getIntervalMs(currentInterval) / 1000;
+            const expectedEnd = bar.time + duration - 1;
+            let lastTickInCache = cached.length > 0 ? cached[cached.length - 1].time : bar.time - 1;
+            if (lastTickInCache < expectedEnd && gapStartTime === -1) {
+                gapStartTime = lastTickInCache + 1;
+            }
+            
+            if (bufferedCount >= 1000) break;
+        }
+        
+        if (bufferedCount < 1000 && gapStartTime !== -1) {
+            console.log(`[Buffer] Level ${bufferedCount} < 1000. Fetching 1000 ticks from ${gapStartTime}...`);
+            const items = await fetch1sKlinesBatch(gapStartTime);
+            if (items.length > 0) {
+                distributeTicksToCache(items);
+                
+                // If we are really low on buffer, maybe fetch one more batch immediately?
+                if (bufferedCount + items.length < 500) {
+                     const nextStart = items[items.length-1].time + 1;
+                     const more = await fetch1sKlinesBatch(nextStart);
+                     distributeTicksToCache(more);
+                }
+            }
+        }
+    }
+    function manageTickCacheSize() {
+        if (tickCache.size > TICK_CACHE_SIZE) {
+            const keys = tickCache.keys();
+            const first = keys.next().value;
+            // Only remove if it's strictly in the past (before current playing bar)
+            // backtestData[backtestIndex] is the *completed* bar shown on chart (if we are between bars)
+            // If we are playing next bar, currentSimTime > backtestData[backtestIndex].time
+            if (first < backtestData[backtestIndex].time) {
+                 tickCache.delete(first);
+            }
+        }
+    }
+    // Removed ensure1sKlinesForBar as it is replaced by preloadNextTicks logic
+    async function fetch1sKlinesBatch(startTime) {
+        // Always fetch 1000 items
+        const url = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=1s&startTime=${startTime*1000}&limit=1000`;
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                 return data.map(d => ({
+                    time: d[0] / 1000,
+                    open: parseFloat(d[1]),
+                    high: parseFloat(d[2]),
+                    low: parseFloat(d[3]),
+                    close: parseFloat(d[4]),
+                    volume: parseFloat(d[5]),
+                    isTrade: false
+                }));
+            }
+        } catch(e) { console.error(e); }
+        return [];
+    }
+    function distributeTicksToCache(items) {
+        const intervalSec = getIntervalMs(currentInterval) / 1000;
+        
+        items.forEach(item => {
+             const barTime = Math.floor(item.time / intervalSec) * intervalSec;
+             
+             if (!tickCache.has(barTime)) {
+                 tickCache.set(barTime, []);
+             }
+             
+             const bucket = tickCache.get(barTime);
+             if (bucket.length === 0 || bucket[bucket.length-1].time < item.time) {
+                 bucket.push(item);
+             }
+        });
+        manageTickCacheSize();
+    }
+    async function fetchSecondKlines(bar) {
+        const startTime = bar.time * 1000;
+        const durationMs = getIntervalMs(currentInterval);
+        const endTime = startTime + durationMs - 1;
+        const useAggTrade = document.getElementById('chk-use-agg-trade').checked;
+        
+        let url = '';
+        if (useAggTrade) {
+            url = `https://api.binance.com/api/v3/aggTrades?symbol=${currentSymbol}&startTime=${startTime}&endTime=${endTime}&limit=1000`;
+        } else {
+            url = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=1s&startTime=${startTime}&limit=${Math.min(1000, durationMs/1000)}`; 
+        }
+        
+        const start = performance.now();
+        
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            const duration = (performance.now() - start).toFixed(2);
+            
+            if (Array.isArray(data)) {
+                console.log(`[Tick] Fetched ${data.length} ${useAggTrade ? 'trades' : 'ticks'} in ${duration}ms`);
+                
+                if (useAggTrade) {
+                    return data.map(d => ({
+                        time: d.T / 1000,
+                        price: parseFloat(d.p),
+                        quantity: parseFloat(d.q),
+                        isTrade: true
+                    })).sort((a,b) => a.time - b.time);
+                } else {
+                    return data.map(d => ({
+                        time: d[0] / 1000,
+                        open: parseFloat(d[1]),
+                        high: parseFloat(d[2]),
+                        low: parseFloat(d[3]),
+                        close: parseFloat(d[4]),
+                        volume: parseFloat(d[5]),
+                        isTrade: false
+                    }));
+                }
+            }
+        } catch (e) {
+            console.error("Tick/Trade fetch error", e);
+        }
+        return [];
+    }
+    function startTickReplayForBar(bar, ticks) {
+        tickQueue = [...ticks]; 
+        
+        simBaseTime = bar.time; // Start replay at the bar's open time
+        replayBaseTime = performance.now(); // Mark wall clock start
+        lastReplayedTickTime = bar.time - 1; // Reset logic for new bar
+        
+        currentTickCandle = {
+            time: bar.time,
+            open: bar.open, 
+            high: ticks.length > 0 ? (ticks[0].isTrade ? ticks[0].price : ticks[0].high) : bar.open,
+            low: ticks.length > 0 ? (ticks[0].isTrade ? ticks[0].price : ticks[0].low) : bar.open,
+            close: ticks.length > 0 ? (ticks[0].isTrade ? ticks[0].price : ticks[0].close) : bar.open,
+            volume: 0
+        };
+        
+        candleSeries.update(currentTickCandle);
+        volumeSeries.update({
+            time: currentTickCandle.time,
+            value: currentTickCandle.volume,
+            color: currentTickCandle.close >= currentTickCandle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+        });
+        playNextTick();
+    }
+    function playNextTick() {
+        if (!isPlaying) return;
+        let speedFactor = 1;
+        if (playSpeed.startsWith('realtime')) {
+            speedFactor = parseInt(playSpeed.split('_')[1]);
+        } else {
+            // "1000" mode (Jump) - effectively max speed
+            speedFactor = 10000; 
+        }
+        // 1. Calculate current simulation time
+        const wallElapsed = performance.now() - replayBaseTime; // ms
+        const simElapsed = (wallElapsed * speedFactor) / 1000; // seconds
+        const currentSimTime = simBaseTime + simElapsed;
+        let processed = false;
+        let lastTick = null;
+        // 2. Process all ticks that have occurred up to currentSimTime
+        while (tickQueue.length > 0 && tickQueue[0].time <= currentSimTime) {
+            const tick = tickQueue.shift();
+            lastTick = tick;
+            processed = true;
+            if (tick.isTrade) {
+                currentTickCandle.close = tick.price;
+                if (tick.price > currentTickCandle.high) currentTickCandle.high = tick.price;
+                if (tick.price < currentTickCandle.low) currentTickCandle.low = tick.price;
+                currentTickCandle.volume += tick.quantity;
+                
+                checkPendingOrders(tick.price, tick.price); // Check for fills
+                
+            } else {
+                currentTickCandle.high = Math.max(currentTickCandle.high, tick.high);
+                currentTickCandle.low = Math.min(currentTickCandle.low, tick.low);
+                currentTickCandle.close = tick.close;
+                currentTickCandle.volume += tick.volume;
+                
+                checkPendingOrders(tick.high, tick.low); // Check for fills
+            }
+        }
+        // 3. Update Chart & UI (Once per frame)
+        if (processed) {
+            candleSeries.update(currentTickCandle);
+            volumeSeries.update({
+                time: currentTickCandle.time,
+                value: currentTickCandle.volume,
+                color: currentTickCandle.close >= currentTickCandle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+            });
+            updateTradingUI();
+            
+            if (lastTick) {
+                lastReplayedTickTime = lastTick.time; // Track global playback pos
+                
+                const dateStr = formatDateWithSeconds(new Date(lastTick.time * 1000));
+                const priceStr = formatPrice(currentTickCandle.close);
+                document.getElementById('status').innerText = `回測中: ${priceStr} 🟢 (${dateStr})`;
+            }
+            document.getElementById('countdown').innerText = `Ticks: ${tickQueue.length}`;
+        }
+        // 4. Schedule next check
+        if (tickQueue.length === 0) {
+            // Check for premature emptiness (Non-AggTrade)
+            const useAggTrade = document.getElementById('chk-use-agg-trade').checked;
+            if (!useAggTrade) {
+                 const intervalSec = getIntervalMs(currentInterval) / 1000;
+                 const barEndTime = simBaseTime + intervalSec;
+                 
+                 // If we haven't reached the end of the bar (minus 1s buffer)
+                 // And we are out of ticks, check cache.
+                 if (currentSimTime < barEndTime - 1) {
+                     const cached = tickCache.get(simBaseTime) || [];
+                     // Find new ticks we haven't played
+                     const newTicks = cached.filter(t => t.time > lastReplayedTickTime);
+                     
+                     if (newTicks.length > 0) {
+                         tickQueue.push(...newTicks);
+                         playNextTick(); 
+                         return;
+                     } else {
+                         // Buffer underrun
+                         document.getElementById('status').innerText = "Buffering...";
+                         // Force a check immediately
+                         preloadNextTicks(backtestIndex); 
+                         playIntervalId = setTimeout(playNextTick, 200);
+                         return;
+                     }
+                 }
+            }
+            // If finished ticks for this bar, move to next bar
+            stepForward();
+            scheduleNextStep();
+        } else {
+            const nextTickTime = tickQueue[0].time;
+            const simWait = nextTickTime - currentSimTime; // seconds
+            const wallWait = (simWait * 1000) / speedFactor; // ms
+            
+            // Limit min delay to 0 (run asap)
+            playIntervalId = setTimeout(playNextTick, Math.max(0, wallWait));
+        }
+    }
+    
+    function formatDateWithSeconds(date) {
+        const pad = (n) => n < 10 ? '0' + n : n;
+        return date.getUTCFullYear() + '/' + 
+               pad(date.getUTCMonth() + 1) + '/' + 
+               pad(date.getUTCDate()) + ' ' + 
+               pad(date.getUTCHours()) + ':' + 
+               pad(date.getUTCMinutes()) + ':' + 
+               pad(date.getUTCSeconds());
+    }
+    function getIntervalMs(interval) {
+        const unit = interval.slice(-1);
+        const val = parseInt(interval);
+        if (unit === 'm') return val * 60 * 1000;
+        if (unit === 'h') return val * 60 * 60 * 1000;
+        if (unit === 'd') return val * 24 * 60 * 60 * 1000;
+        return 60000;
+    }
+    
+    function startCountdown(targetTime) {
+        if (countdownIntervalId) clearInterval(countdownIntervalId);
+        
+        countdownIntervalId = setInterval(() => {
+            if (!isPlaying) {
+                document.getElementById('countdown').innerText = "";
+                return;
+            }
+            const remaining = Math.max(0, targetTime - Date.now());
+            document.getElementById('countdown').innerText = (remaining / 1000).toFixed(1) + "s";
+        }, 100);
+    }
+    function resetTradingState() {
+        positionSize = 0;
+        entryPrice = 0;
+        // realizedPnL = 0; // Persist PnL across switches
+        // tradeHistory = []; // Persist History across switches
+        clearPendingOrders();
+        updateTradingUI();
+    }
+    function getCurrentPrice() {
+        if (currentMode === 'backtest') {
+            if (currentTickCandle) {
+                return currentTickCandle.close;
+            }
+            if (backtestData.length > 0 && backtestIndex >= 0) {
+                return backtestData[backtestIndex].close;
+            }
+        } else {
+             if (latestRealtimePrice > 0) return latestRealtimePrice;
+             if (currentData.length > 0) {
+                 return currentData[currentData.length-1].close;
+             }
+        }
+        return 0;
+    }
+    function placeOrder(side, type) {
+        // Data check based on mode
+        if (currentMode === 'backtest') {
+            if (backtestData.length === 0) return;
+        } else {
+            if (currentData.length === 0) return;
+        }
+        
+        const qtyInput = parseFloat(document.getElementById('trade-qty').value);
+        
+        if (isNaN(qtyInput) || qtyInput <= 0) {
+            alert("請輸入有效的數量");
+            return;
+        }
+        if (type === 'limit') {
+            const limitPrice = parseFloat(document.getElementById('limit-price-input').value);
+            if (isNaN(limitPrice) || limitPrice <= 0) {
+                alert("請輸入有效的價格");
+                return;
+            }
+            createLimitOrder(side, limitPrice, qtyInput);
+        } else {
+             const currentPrice = getCurrentPrice();
+             if (currentPrice === 0) return;
+             processFill(side, currentPrice, qtyInput, TAKER_FEE);
+        }
+    }
+    function createLimitOrder(side, price, qty) {
+        // Marketable Limit Order Check
+        const currentPrice = getCurrentPrice();
+        if (currentPrice > 0) {
+            // If Buy Limit Price >= Current Price -> Taker (Immediate match)
+            if (side === 'buy' && price >= currentPrice) {
+                // Execute immediately as Taker
+                processFill(side, currentPrice, qty, TAKER_FEE);
+                return;
+            }
+            // If Sell Limit Price <= Current Price -> Taker (Immediate match)
+            if (side === 'sell' && price <= currentPrice) {
+                // Execute immediately as Taker
+                processFill(side, currentPrice, qty, TAKER_FEE);
+                return;
+            }
+        }
+        const id = Date.now() + Math.random();
+        const color = side === 'buy' ? '#26a69a' : '#ef5350';
+        
+        // Draw dashed line
+        const line = candleSeries.createPriceLine({
+            price: price,
+            color: color,
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `${side.toUpperCase()} ${qty}`,
+        });
+        pendingOrders.push({
+            id: id,
+            side: side,
+            price: price,
+            qty: qty,
+            line: line
+        });
+        updateCancelButton();
+    }
+    function processFill(side, currentPrice, tradeQty, feeRate = TAKER_FEE) {
+        // Get Timestamp
+        let tradeTime = 0;
+        if (currentMode === 'backtest') {
+            if (currentTickCandle) tradeTime = currentTickCandle.time;
+            else if (backtestData.length > 0) tradeTime = backtestData[backtestIndex].time;
+        } else {
+            if (currentData.length > 0) {
+                tradeTime = currentData[currentData.length - 1].time;
+            } else {
+                tradeTime = Math.floor(Date.now() / 1000);
+            }
+        }
+        const tradeFee = currentPrice * tradeQty * feeRate;
+        realizedPnL -= tradeFee; // Deduct fee immediately
+        let type = '';
+        let pnl = 0;
+        if (positionSize === 0) {
+            // Open New Position
+            positionSize = (side === 'buy') ? tradeQty : -tradeQty;
+            entryPrice = currentPrice;
+            type = (side === 'buy') ? 'OPEN_LONG' : 'OPEN_SHORT';
+            
+            tradeHistory.push({
+                time: tradeTime,
+                symbol: currentSymbol,
+                type: type,
+                price: currentPrice,
+                qty: tradeQty,
+                fee: tradeFee,
+                pnl: -tradeFee // Initial cost
+            });
+        } else if ((positionSize > 0 && side === 'buy') || (positionSize < 0 && side === 'sell')) {
+            // Add to Position
+            const totalVal = (Math.abs(positionSize) * entryPrice) + (tradeQty * currentPrice);
+            const newSize = Math.abs(positionSize) + tradeQty;
+            entryPrice = totalVal / newSize;
+            positionSize += (side === 'buy') ? tradeQty : -tradeQty;
+            type = (side === 'buy') ? 'ADD_LONG' : 'ADD_SHORT';
+            tradeHistory.push({
+                time: tradeTime,
+                symbol: currentSymbol,
+                type: type,
+                price: currentPrice,
+                qty: tradeQty,
+                fee: tradeFee,
+                pnl: -tradeFee
+            });
+        } else {
+            const posAbs = Math.abs(positionSize);
+            let qtyToClose = 0;
+            let qtyToOpen = 0;
+            if (tradeQty <= posAbs) {
+                qtyToClose = tradeQty;
+                qtyToOpen = 0;
+            } else {
+                qtyToClose = posAbs;
+                qtyToOpen = tradeQty - posAbs;
+            }
+            
+            // 1. Process Closing Part
+            const direction = positionSize > 0 ? 1 : -1;
+            const realized = (currentPrice - entryPrice) * direction * qtyToClose;
+            
+            realizedPnL += realized;
+            
+            if (positionSize > 0) positionSize -= qtyToClose;
+            else positionSize += qtyToClose;
+            
+            type = (side === 'buy') ? 'CLOSE_SHORT' : 'CLOSE_LONG'; 
+            
+            tradeHistory.push({
+                time: tradeTime,
+                symbol: currentSymbol,
+                type: type,
+                price: currentPrice,
+                qty: qtyToClose,
+                fee: tradeFee,
+                pnl: realized - tradeFee
+            });
+            
+            // 2. Process Opening Part (Reverse)
+            if (qtyToOpen > 0) {
+                positionSize = (side === 'buy') ? qtyToOpen : -qtyToOpen;
+                entryPrice = currentPrice;
+                type = (side === 'buy') ? 'OPEN_LONG' : 'OPEN_SHORT';
+                
+                tradeHistory.push({
+                    time: tradeTime,
+                    symbol: currentSymbol,
+                    type: type,
+                    price: currentPrice,
+                    qty: qtyToOpen,
+                    fee: 0, 
+                    pnl: 0 
+                });
+            }
+        }
+        
+        updateTradingUI();
+    }
+    function checkPendingOrders(high, low) {
+        if (pendingOrders.length === 0) return;
+        // Iterate backwards to allow removal
+        for (let i = pendingOrders.length - 1; i >= 0; i--) {
+            const order = pendingOrders[i];
+            let filled = false;
+            
+            // Buy Limit: Fill if Low <= OrderPrice
+            if (order.side === 'buy' && low <= order.price) {
+                filled = true;
+            }
+            // Sell Limit: Fill if High >= OrderPrice
+            else if (order.side === 'sell' && high >= order.price) {
+                filled = true;
+            }
+            if (filled) {
+                // Remove line
+                if (order.line) candleSeries.removePriceLine(order.line);
+                
+                // Execute Trade (Use Order Price as Fill Price, MAKER FEE)
+                processFill(order.side, order.price, order.qty, MAKER_FEE);
+                
+                // Remove from array
+                pendingOrders.splice(i, 1);
+            }
+        }
+        
+        updateCancelButton();
+    }
+    function closePosition() {
+        if (positionSize === 0) return;
+        
+        const currentPrice = getCurrentPrice();
+        const tradeQty = Math.abs(positionSize);
+        const tradeFee = currentPrice * tradeQty * TAKER_FEE;
+        
+        const pnl = (currentPrice - entryPrice) * positionSize;
+        realizedPnL += (pnl - tradeFee);
+        // Log History
+        let tradeTime = 0;
+        if (currentMode === 'backtest') {
+             if (currentTickCandle) tradeTime = currentTickCandle.time;
+             else if (backtestData.length > 0) tradeTime = backtestData[backtestIndex].time;
+        } else {
+             if (currentData.length > 0) {
+                 tradeTime = currentData[currentData.length - 1].time;
+             } else {
+                 tradeTime = Math.floor(Date.now() / 1000);
+             }
+        }
+        const type = positionSize > 0 ? 'CLOSE_LONG' : 'CLOSE_SHORT';
+        
+        tradeHistory.push({
+            time: tradeTime,
+            symbol: currentSymbol,
+            type: type,
+            price: currentPrice,
+            qty: tradeQty,
+            fee: tradeFee,
+            pnl: pnl - tradeFee
+        });
+        
+        positionSize = 0;
+        entryPrice = 0;
+        updateTradingUI();
+    }
+    function updateTradingUI() {
+        const posSizeEl = document.getElementById('pos-size');
+        const posPriceEl = document.getElementById('pos-price');
+        const unrealizedEl = document.getElementById('pnl-unrealized');
+        const realizedEl = document.getElementById('pnl-realized');
+        
+        posSizeEl.innerText = positionSize.toFixed(4);
+        
+        if (positionSize === 0) {
+            posPriceEl.innerText = "0.00";
+            unrealizedEl.innerText = "0.00 (0.00%)";
+            unrealizedEl.style.color = "#d1d4dc";
+            posSizeEl.style.color = "#d1d4dc";
+        } else {
+            posPriceEl.innerText = formatPrice(entryPrice);
+            
+            const currentPrice = getCurrentPrice();
+            
+            const unrealized = (currentPrice - entryPrice) * positionSize;
+            const pnlPercent = entryPrice !== 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 * (positionSize > 0 ? 1 : -1) : 0;
+            
+            unrealizedEl.innerText = `${formatPrice(unrealized)} (${pnlPercent.toFixed(2)}%)`;
+            
+            if (unrealized > 0) unrealizedEl.style.color = "#26a69a"; 
+            else if (unrealized < 0) unrealizedEl.style.color = "#ef5350"; 
+            else unrealizedEl.style.color = "#d1d4dc";
+            
+            posSizeEl.style.color = positionSize > 0 ? "#26a69a" : "#ef5350";
+        }
+        
+        realizedEl.innerText = formatPrice(realizedPnL);
+        realizedEl.style.color = realizedPnL >= 0 ? "#26a69a" : "#ef5350";
+        updateMarkers();
+    }
+    function updateMarkers() {
+        if (!candleSeries) return;
+        
+        const buys = ['OPEN_LONG', 'ADD_LONG', 'CLOSE_SHORT'];
+        const sells = ['OPEN_SHORT', 'ADD_SHORT', 'CLOSE_LONG'];
+        const markers = tradeHistory
+            .filter(t => (t.symbol || currentSymbol) === currentSymbol)
+            .map(t => {
+                if (buys.includes(t.type)) {
+                    return {
+                        time: t.time,
+                        position: 'belowBar',
+                        color: '#26a69a',
+                        shape: 'arrowUp',
+                        text: 'B'
+                    };
+                } else if (sells.includes(t.type)) {
+                    return {
+                        time: t.time,
+                        position: 'aboveBar',
+                        color: '#ef5350',
+                        shape: 'arrowDown',
+                        text: 'S'
+                    };
+                }
+                return null;
+            })
+            .filter(m => m !== null)
+            .sort((a, b) => a.time - b.time);
+        candleSeries.setMarkers(markers);
+    }
+    function generateReport() {
+        const modal = document.getElementById('report-modal');
+        const tableBody = document.querySelector('#report-table tbody');
+        const tableHead = document.querySelector('#report-table thead tr');
+        
+        // Ensure Header has Symbol column
+        if (!tableHead.querySelector('.th-symbol')) {
+            const th = document.createElement('th');
+            th.innerText = '商品 (Symbol)';
+            th.className = 'th-symbol';
+            tableHead.insertBefore(th, tableHead.children[1]); // Insert after Time
+        }
+        tableBody.innerHTML = '';
+        // Update Modal Title with Symbol and Mode
+        const modeTitle = currentMode === 'realtime' ? '即時交易報告' : '回測交易報告';
+        modal.querySelector('h2').innerText = `${currentSymbol} ${modeTitle}`;
+        // 1. Calculate Summary Stats
+        const fillsWithPnL = tradeHistory.filter(t => t.pnl !== 0);
+        const totalTrades = fillsWithPnL.length;
+        const winningTrades = fillsWithPnL.filter(t => t.pnl > 0);
+        const losingTrades = fillsWithPnL.filter(t => t.pnl < 0);
+        
+        const winCount = winningTrades.length;
+        const lossCount = losingTrades.length;
+        const winRate = totalTrades > 0 ? (winCount / totalTrades * 100).toFixed(2) : 0;
+        const totalWin = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
+        const totalLoss = Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0));
+        const profitFactor = totalLoss > 0 ? (totalWin / totalLoss).toFixed(2) : (totalWin > 0 ? '∞' : '0.00');
+        const avgWin = winCount > 0 ? totalWin / winCount : 0;
+        const avgLoss = lossCount > 0 ? totalLoss / lossCount : 0;
+        const riskRewardRatio = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : '0.00';
+        const totalFees = tradeHistory.reduce((sum, t) => sum + (t.fee || 0), 0);
+        // Calculate Unrealized PnL
+        let unrealized = 0;
+        if (positionSize !== 0) {
+            const currentPrice = getCurrentPrice();
+            unrealized = (currentPrice - entryPrice) * positionSize;
+        }
+        
+        // 2. Populate Table (Time Descending)
+        const sortedHistory = [...tradeHistory].reverse();
+        sortedHistory.forEach(t => {
+            const row = document.createElement('tr');
+            const date = new Date(t.time * 1000);
+            const timeStr = formatDateWithSeconds(date);
+            
+            let typeColor = '#d1d4dc';
+            if (t.type.includes('LONG')) typeColor = '#26a69a';
+            if (t.type.includes('SHORT')) typeColor = '#ef5350';
+            
+            let pnlClass = '';
+            if (t.pnl > 0) pnlClass = 'text-green';
+            else if (t.pnl < 0) pnlClass = 'text-red';
+            row.innerHTML = `
+                <td>${timeStr}</td>
+                <td>${t.symbol || currentSymbol}</td>
+                <td style="color:${typeColor}; font-weight:bold;">${t.type}</td>
+                <td>${formatPrice(t.price)}</td>
+                <td>${t.qty.toFixed(4)}</td>
+                <td>${formatPrice(t.fee || 0)}</td>
+                <td class="${pnlClass}">${t.pnl !== 0 ? formatPrice(t.pnl) : '-'}</td>
+            `;
+            tableBody.appendChild(row);
+        });
+        // 3. Update Summary Header
+        document.getElementById('report-total-trades').innerText = totalTrades;
+        document.getElementById('report-total-pnl').innerText = formatPrice(realizedPnL);
+        document.getElementById('report-total-pnl').className = realizedPnL >= 0 ? 'text-green' : 'text-red';
+        
+        document.getElementById('report-unrealized').innerText = formatPrice(unrealized);
+        document.getElementById('report-unrealized').className = unrealized >= 0 ? 'text-green' : 'text-red';
+        document.getElementById('report-total-fees').innerText = formatPrice(totalFees);
+        // Update New Stats (Need to ensure elements exist in HTML)
+        updateStatBox('report-win-rate', `${winRate}% (${winCount}/${lossCount})`);
+        updateStatBox('report-profit-factor', profitFactor);
+        updateStatBox('report-rr-ratio', riskRewardRatio);
+        modal.style.display = "block";
+    }
+    function updateStatBox(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.innerText = value;
+    }
+    function closeReport() {
+        document.getElementById('report-modal').style.display = "none";
+    }
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        const modal = document.getElementById('report-modal');
+        if (event.target == modal) {
+            modal.style.display = "none";
+        }
+    }
+    // --- 啟動程序 ---
+    initChart();
+    // 第一次載入 (Realtime) - Initialize UI and Start
+    switchMode('realtime');
+</script>
+</body>
+</html>
