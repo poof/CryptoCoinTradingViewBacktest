@@ -28,8 +28,6 @@ This project is a lightweight, web-based cryptocurrency trading simulator and ba
 
 #### 3. 🛠️ Modular & Standalone
 *   **Single File Version**: `index.html` contains everything you need. Just open it in a browser to start.
-*   **Modular Version**: Located in the `modular/` folder, separating HTML, CSS, and JS for easier development.
-*   **Offline Support**: Essential libraries are included, allowing basic functionality even with unstable internet.
 
 #### 4. 💹 Trading System
 *   **Multi-Asset Support**: Independent state (position, avg price, PnL) for different trading pairs.
@@ -70,8 +68,6 @@ This project is a lightweight, web-based cryptocurrency trading simulator and ba
 
 #### 3. 🛠️ 模組化與單一檔案
 *   **單一檔案版**：`index.html` 整合了所有功能，瀏覽器打開即用，方便分享。
-*   **模組化版**：位於 `modular/` 資料夾，將代碼拆分為 HTML/CSS/JS，適合開發者維護。
-*   **離線支援**：內建基礎函式庫，網路不穩時仍可操作基本介面。
 
 #### 4. 💹 模擬交易系統
 *   **多商品狀態隔離**：不同交易對的倉位與損益獨立計算。
