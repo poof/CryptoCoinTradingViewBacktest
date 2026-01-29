@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Crypto Backtest Mobile</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+	<script async src="https://www.googletagmanager.com/gtag/js?id=G-L1D20M0NX2"></script>
+	<script>
+	  window.dataLayer = window.dataLayer || [];
+	  function gtag(){dataLayer.push(arguments);}
+	  gtag('js', new Date());
+	  gtag('config', 'G-L1D20M0NX2');
+	</script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --header-bg: #2a2e39;
+            --text-color: #d1d4dc;
+            --accent-color: #2962ff;
+            --buy-color: #26a69a;
+            --sell-color: #ef5350;
+            --border-color: #363c4e;
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh; /* Fallback */
+            height: 100dvh; /* Dynamic Viewport Height for mobile browsers */
+            overflow: hidden;
+        }
+
+        /* --- Header (Row 1) --- */
+        #mobile-header {
+            height: 50px;
+            background-color: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 10px;
+            flex-shrink: 0;
+            z-index: 20;
+        }
+        
+        /* Direct Selectors in Header */
+        .header-input-group {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+            min-width: 0; /* Allow shrinking */
+        }
+        
+        #header-symbol-input {
+            width: 110px; /* Fixed smaller width */
+            flex: none; /* Don't grow */
+            background: #1e1e1e;
+            border: 1px solid #444;
+            color: white;
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        #header-tick-time {
+            flex: 1;
+            text-align: center;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px; /* Smaller font for long UTC string */
+            color: #d1d4dc;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        
+        #header-interval-select {
+            width: 60px;
+            background: #1e1e1e;
+            border: 1px solid #444;
+            color: white;
+            padding: 6px 4px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .icon-btn {
+            background: none; border: none; color: var(--text-color);
+            font-size: 20px; padding: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+
+        /* --- Tools Strip (Row 2) --- */
+        #tools-strip {
+            height: 40px;
+            background-color: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 15px;
+            overflow-x: auto; /* Allow scrolling if many tools */
+            flex-shrink: 0;
+            z-index: 19;
+        }
+        
+        .tool-icon {
+            font-size: 16px;
+            color: #888;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .tool-icon.active {
+            background-color: var(--accent-color);
+            color: white;
+        }
+        .status-dot { height: 8px; width: 8px; border-radius: 50%; background-color: #555; display: inline-block; }
+        .status-dot.active { background-color: #00e676; }
+
+        /* --- Chart --- */
+        #chart-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            min-height: 0; /* Important for flex nesting */
+        }
+        .loading-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center;
+            z-index: 5; display: none;
+        }
+
+        /* --- Backtest Playback Bar (Floating bottom of chart) --- */
+        #playback-bar {
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(42, 46, 57, 0.9); border-radius: 20px;
+            padding: 5px 15px; display: flex; gap: 15px; align-items: center;
+            z-index: 10; border: 1px solid var(--border-color);
+            display: none; /* Show only in BT mode */
+        }
+        #playback-bar button { background: none; border: none; color: white; font-size: 18px; padding: 0 5px; }
+
+        /* --- Bottom Trading Bar --- */
+        #trading-bar {
+            background-color: var(--header-bg);
+            border-top: 1px solid var(--border-color);
+            padding: 6px 10px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            z-index: 20;
+            padding-bottom: env(safe-area-inset-bottom, 6px);
+        }
+        .pnl-row {
+            display: flex; justify-content: space-between; font-size: 11px; color: #aaa;
+        }
+        
+        /* Compact Input Row */
+        .settings-row {
+            display: flex; gap: 6px; align-items: center; height: 32px;
+        }
+        .order-type-toggle {
+            display: flex; background: #1e1e1e; border-radius: 4px; border: 1px solid #444; overflow: hidden; height: 32px;
+        }
+        .type-btn {
+            padding: 0 8px; font-size: 11px; color: #888; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        }
+        .type-btn.active {
+            background: var(--accent-color); color: white; font-weight: bold;
+        }
+        .compact-input {
+            flex: 1; background: #1e1e1e; border: 1px solid #444; color: white;
+            height: 32px; padding: 0 6px; border-radius: 4px; font-size: 12px; min-width: 0;
+        }
+
+        .action-row {
+            display: flex; gap: 8px; height: 38px;
+        }
+        .btn-trade {
+            flex: 1; border: none; border-radius: 4px;
+            font-weight: bold; font-size: 14px; color: white; cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .btn-buy { background-color: var(--buy-color); }
+        .btn-sell { background-color: var(--sell-color); }
+        .btn-close { background-color: #555; width: 40px; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+
+        /* --- Slide-up Menus (Overlay) --- */
+        .drawer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 100;
+            visibility: hidden; opacity: 0; transition: opacity 0.3s;
+        }
+        .drawer.open { visibility: visible; opacity: 1; }
+        .drawer-content {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background: var(--header-bg); border-top-left-radius: 16px; border-top-right-radius: 16px;
+            padding: 20px; max-height: 80vh; overflow-y: auto;
+            transform: translateY(100%); transition: transform 0.3s;
+            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+        }
+        .drawer.open .drawer-content { transform: translateY(0); }
+        
+        /* Menu Items */
+        .menu-group { margin-bottom: 20px; }
+        .menu-title { font-size: 12px; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+        .menu-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        
+        /* Inputs & Selects inside drawer */
+        .drawer input, .drawer select {
+            background: #1e1e1e; border: 1px solid var(--border-color); color: white;
+            padding: 10px; border-radius: 6px; font-size: 16px; width: 100%;
+        }
+        .chip {
+            padding: 8px 16px; background: #363c4e; border-radius: 20px; font-size: 14px;
+            cursor: pointer; border: 1px solid transparent;
+        }
+        .chip.active { background: var(--accent-color); border-color: var(--accent-color); color: white; }
+
+        /* Trade Modal Specifics */
+        .trade-tabs { display: flex; margin-bottom: 15px; border-bottom: 1px solid #444; }
+        .trade-tab { flex: 1; text-align: center; padding: 10px; color: #888; border-bottom: 2px solid transparent; }
+        .trade-tab.active { color: white; border-bottom-color: var(--accent-color); font-weight: bold; }
+        
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; font-size: 12px; color: #888; margin-bottom: 5px; }
+        .qty-presets { display: flex; gap: 5px; margin-top: 5px; }
+        .qty-preset { flex: 1; font-size: 10px; padding: 5px; background: #333; border-radius: 4px; text-align: center; }
+        
+        /* Report Modal */
+        #report-modal { display: none; background: var(--bg-color); position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 200; overflow-y: auto; padding: 20px; }
+        .stat-card { background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; }
+        .text-green { color: var(--buy-color); }
+        .text-red { color: var(--sell-color); }
+
+        /* Order Cancel Button on Chart */
+        .order-cancel-btn {
+            position: absolute;
+            right: 55px; /* Inside the chart area, left of price scale */
+            width: 18px;
+            height: 18px;
+            background: rgba(239, 83, 80, 0.8);
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 18px;
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 15; /* Above drawing layer */
+            display: none;
+            user-select: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+        .order-cancel-btn:hover {
+            background: #ef5350;
+            transform: scale(1.1);
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Header (Fixed Top) -->
+    <div id="mobile-header">
+        <div class="header-input-group">
+            <!-- Symbol Input with Datalist -->
+            <input list="symbol-options" id="header-symbol-input" value="BTCUSDT" 
+                   onfocus="this.value=''" 
+                   onblur="if(this.value===''){this.value=currentSymbol}"
+                   onchange="onHeaderParamChange()">
+            <datalist id="symbol-options"></datalist>
+
+            <!-- Tick Time Display -->
+            <div id="header-tick-time">--:--:--</div>
+
+            <!-- Interval Select -->
+            <select id="header-interval-select" onchange="onHeaderParamChange()">
+                <option value="1m">1m</option>
+                <option value="5m">5m</option>
+                <option value="15m">15m</option>
+                <option value="1h">1H</option>
+                <option value="4h">4H</option>
+                <option value="1d">1D</option>
+            </select>
+        </div>
+        
+        <!-- Hamburger for Secondary Settings -->
+        <button class="icon-btn" onclick="toggleDrawer('main-menu')">☰</button>
+    </div>
+
+    <!-- Tools Strip (Below Header) -->
+    <div id="tools-strip">
+        <div class="tool-icon active" id="tool-cursor" onclick="setTool('cursor')">✋</div>
+        <div class="tool-icon" id="tool-trend" onclick="setTool('trend')">📉</div>
+        <div class="tool-icon" id="tool-horizontal" onclick="setTool('horizontal')">➖</div>
+        <div class="tool-icon" onclick="drawingManager.clearAll()" style="color:#ef5350;">🗑️</div>
+        
+        <div style="width:1px; height:20px; background:#444; margin:0 5px;"></div>
+        <input type="checkbox" id="chk-show-volume" checked onchange="toggleVolume()"> Vol
+        <div class="tool-icon" onclick="toggleDrawer('report-modal')">📊</div>
+        <div id="status-indicator" class="status-dot"></div>
+		
+    </div>
+
+    <!-- Chart -->
+    <div id="chart-container">
+        <div id="loading" class="loading-overlay">Loading...</div>
+        <svg id="drawing-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:10; pointer-events:none;"></svg>
+        
+        <!-- Backtest Playback Controls -->
+        <div id="playback-bar">
+            <button onclick="stepBackward()">⏪</button>
+            <button id="btn-play-mobile" onclick="togglePlay()">▶</button>
+            <button onclick="stepForward()">⏩</button>
+        </div>
+    </div>
+
+    <!-- Bottom Trading Bar -->
+    <div id="trading-bar">
+        <div class="pnl-row">
+            <div>Pos: <span id="pos-size" style="color:#fff;">0</span></div>
+            <div>PnL: <span id="pnl-unrealized">0.00</span></div>
+            <div>Realized: <span id="pnl-realized">0.00</span></div>
+        </div>
+
+        <!-- Direct Settings Row -->
+        <div class="settings-row">
+            <div class="order-type-toggle">
+                <div id="mobile-tab-market" class="type-btn active" onclick="setMobileOrderType('market')">Mkt</div>
+                <div id="mobile-tab-limit" class="type-btn" onclick="setMobileOrderType('limit')">Lmt</div>
+            </div>
+            <input type="number" id="trade-qty" class="compact-input" value="1" step="0.0001" placeholder="Qty">
+            <input type="number" id="limit-price-input" class="compact-input" step="0.01" placeholder="Price" style="display:none;">
+            
+            <input type="hidden" id="mobile-order-type" value="market">
+        </div>
+
+        <div class="action-row">
+            <button class="btn-trade btn-buy" onclick="placeOrder('buy', document.getElementById('mobile-order-type').value)">Buy</button>
+            <button class="btn-trade btn-sell" onclick="placeOrder('sell', document.getElementById('mobile-order-type').value)">Sell</button>
+            <button class="btn-trade btn-close" onclick="closePosition()">X</button>
+        </div>
+        
+        <!-- Logic Compatibility -->
+        <button id="btn-cancel-orders" style="display:none;" onclick="clearPendingOrders()">Cancel Orders</button>
+    </div>
+
+    <!-- Main Menu Drawer (Settings) -->
+    <div id="main-menu" class="drawer" onclick="if(event.target===this) toggleDrawer('main-menu')">
+        <div class="drawer-content">
+            <h3 style="margin-top:0;">Settings</h3>
+            
+            <div class="menu-group">
+                <div class="menu-title">Mode</div>
+                <div class="menu-row">
+                    <div class="chip active" id="mode-rt" onclick="switchMode('realtime')">Realtime</div>
+                    <div class="chip" id="mode-bt" onclick="switchMode('backtest')">Backtest</div>
+                </div>
+            </div>
+
+            <div id="bt-settings" class="menu-group" style="display:none;">
+                <div class="menu-title">Backtest Settings</div>
+                <div class="form-group">
+                    <label class="form-label">Start Time</label>
+                    <input type="datetime-local" id="bt-start" onchange="startBacktest()">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Speed</label>
+                    <select id="play-speed" onchange="updateSpeed()">
+                        <option value="realtime_1" selected>1x</option>
+                        <option value="realtime_3">3x</option>
+                        <option value="realtime_10">10x</option>
+                        <option value="realtime_60">60x</option>
+						<option value="realtime_120">120x</option>
+                        <option value="realtime_300">300x</option>
+						<option value="realtime_1000">1000x</option>
+                        <option value="1000">Jump 1s</option>
+                    </select>
+                </div>
+                <label style="display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="chk-use-agg-trade" checked> Precise Replay (AggTrade)
+                </label>
+            </div>
+
+            <!-- Hidden inputs to satisfy original logic reference -->
+             <input type="hidden" id="symbol-input" value="BTCUSDT">
+             <input type="hidden" id="interval-select" value="1m">
+        </div>
+    </div>
+
+    <!-- Report Modal (Full Screen) -->
+    <div id="report-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#121212; z-index:200; overflow-y:auto; padding:15px; padding-bottom:50px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h2>Report</h2>
+            <button onclick="document.getElementById('report-modal').style.display='none'" style="background:none; border:none; color:white; font-size:24px;">×</button>
+        </div>
+
+        <div class="stat-card">
+            <span>Win Rate</span>
+            <span id="report-win-rate" style="font-weight:bold;">0%</span>
+        </div>
+        <div class="stat-card">
+            <span>Profit Factor</span>
+            <span id="report-profit-factor" style="font-weight:bold;">0.00</span>
+        </div>
+        <div class="stat-card">
+            <span>Realized PnL</span>
+            <span id="report-total-pnl" style="font-weight:bold;">0.00</span>
+        </div>
+        <div class="stat-card">
+             <span>Total Fees</span>
+             <span id="report-total-fees">0.00</span>
+        </div>
+        <div class="stat-card">
+             <span>Unrealized</span>
+             <span id="report-unrealized">0.00</span>
+        </div>
+        
+        <h3>Trades</h3>
+        <table id="report-table" style="width:100%; font-size:12px; color:#ccc; border-collapse:collapse;">
+            <thead>
+                <tr style="text-align:left; border-bottom:1px solid #333;">
+                    <th style="padding:5px;">Time</th>
+                    <th>Type</th>
+                    <th>Price</th>
+                    <th>Fee</th>
+                    <th>PnL</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        
+        <!-- Hidden logic stats -->
+        <span id="report-total-trades" style="display:none;"></span>
+        <span id="report-rr-ratio" style="display:none;"></span>
+    </div>
+    
+    <!-- Hidden status for logic compatibility -->
+    <div id="status" style="display:none;"></div>
+    <div id="btn-mode-rt" style="display:none;"></div>
+    <div id="btn-mode-bt" style="display:none;"></div>
+
+<script>
+    // --- UI Helpers for Mobile ---
+    function toggleDrawer(id) {
+        const el = document.getElementById(id);
+        if(id === 'report-modal') {
+             if(el.style.display === 'none') {
+                 generateReport();
+                 el.style.display = 'block';
+             } else {
+                 el.style.display = 'none';
+             }
+             return;
+        }
+        if (el.classList.contains('open')) {
+            el.classList.remove('open');
+        } else {
+            document.querySelectorAll('.drawer').forEach(d => d.classList.remove('open'));
+            el.classList.add('open');
+        }
+    }
+
+    function setMobileOrderType(type) {
+        document.getElementById('mobile-order-type').value = type;
+        document.getElementById('mobile-tab-market').classList.toggle('active', type === 'market');
+        document.getElementById('mobile-tab-limit').classList.toggle('active', type === 'limit');
+        
+        // Toggle Price Input Visibility
+        document.getElementById('limit-price-input').style.display = type === 'limit' ? 'block' : 'none';
+    }
+
+    // --- Original Logic (Copied & Adapted) ---
+    // --- 配置 ---
+    let currentSymbol = 'BTCUSDT';
+    let currentInterval = '1m';
+    const LIMIT = 1000;
+    const MAKER_FEE = 0.0001; // 0.01%
+    const TAKER_FEE = 0.0006; // 0.06%
+    
+    // --- 全域變數 ---
+    let chart;
+    let candleSeries;
+    let volumeSeries;
+    let currentData = [];
+    let ws = null; // WebSocket 實例
+    let latestRealtimePrice = 0;
+    // --- Backtest 變數 ---
+    let currentMode = 'realtime'; // 'realtime' or 'backtest'
+    let backtestData = [];
+    let backtestIndex = 0;
+    let isLoadingMore = false; // Prevent multiple fetches (Right/Future)
+    let isPreloadingHistory = false; // Prevent multiple fetches (Left/Past)
+    
+    // --- Playback 變數 ---
+    let isPlaying = false;
+    let playIntervalId = null;
+    let playSpeed = 'realtime_10'; // Default
+    let countdownIntervalId = null;
+    let nextStepTime = 0;
+    
+    // Tick Replay & Cache
+    let tickQueue = [];
+    let isFetchingTicks = false;
+    let currentTickCandle = null;
+    let replayBaseTime = 0; // Wall clock start time for current bar replay
+    let simBaseTime = 0;    // Simulation start time (seconds) for current bar
+    const tickCache = new Map(); // timestamp -> tick array
+    const TICK_CACHE_SIZE = 50; // Keep limited amount of tick data
+    // --- Trading 變數 ---
+    let tradingState = {
+        realtime: {}, // Map<Symbol, State>
+        backtest: {}  // Map<Symbol, State>
+    };
+    function getDefaultState() {
+        return {
+            positionSize: 0,
+            entryPrice: 0,
+            realizedPnL: 0,
+            history: [],
+            orders: []
+        };
+    }
+    
+    // Shortcuts for current active state (updated in switchMode)
+    let positionSize = 0;
+    let entryPrice = 0;
+    let realizedPnL = 0;
+    let tradeHistory = []; 
+    let pendingOrders = []; 
+    function syncGlobalToState() {
+        if (!tradingState[currentMode][currentSymbol]) {
+            tradingState[currentMode][currentSymbol] = getDefaultState();
+        }
+        tradingState[currentMode][currentSymbol] = {
+            positionSize,
+            entryPrice,
+            realizedPnL,
+            history: tradeHistory,
+            orders: pendingOrders
+        };
+    }
+    function syncStateToGlobal() {
+        let s = tradingState[currentMode][currentSymbol];
+        if (!s) {
+            s = getDefaultState();
+            tradingState[currentMode][currentSymbol] = s;
+        }
+        positionSize = s.positionSize;
+        entryPrice = s.entryPrice;
+        realizedPnL = s.realizedPnL;
+        tradeHistory = s.history;
+        pendingOrders = s.orders;
+        
+        restorePendingOrderLines();
+        // updateCancelButton(); // Hidden logic
+        updateTradingUI();
+    }
+    
+    function restorePendingOrderLines() {
+        pendingOrders.forEach(o => {
+            // Re-create the line object
+            const color = o.side === 'buy' ? '#26a69a' : '#ef5350';
+            o.line = candleSeries.createPriceLine({
+                price: o.price,
+                color: color,
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: `${o.side.toUpperCase()} ${o.qty}`,
+            });
+            
+            // Re-create Button
+            if (o.btn) o.btn.remove(); // Remove old if exists
+            const btn = document.createElement('div');
+            btn.className = 'order-cancel-btn';
+            btn.innerText = '×';
+            btn.onclick = (e) => { e.stopPropagation(); cancelSingleOrder(o.id); };
+            document.getElementById('chart-container').appendChild(btn);
+            o.btn = btn;
+        });
+        updateOrderButtons();
+    }
+    function clearPendingOrders() {
+        pendingOrders.forEach(o => {
+            if (o.line) candleSeries.removePriceLine(o.line);
+            if (o.btn) o.btn.remove();
+        });
+        pendingOrders = [];
+        // updateCancelButton();
+    }
+
+    // --- Drawing System ---
+    let drawingManager;
+    let currentTool = 'cursor'; // cursor, trend, horizontal
+    class DrawingManager {
+        constructor(chart, series, svgElement, container) {
+            this.chart = chart;
+            this.series = series;
+            this.svg = svgElement;
+            this.container = container;
+            this.drawings = []; // { id, type, points: [{time, price}], selected }
+            this.activeDrawing = null; // drawing currently being created
+            this.dragState = null; // { drawingId, pointIndex, startX, startY, startPrice, startTime }
+            
+            this.bindEvents();
+            
+            // Sync on scroll/zoom
+            this.chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+                this.render();
+            });
+            
+            // Sync on resize
+            new ResizeObserver(() => this.render()).observe(this.container);
+        }
+        bindEvents() {
+            // Touch Support for Mobile
+            this.container.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+            this.container.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+            this.container.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+
+            this.container.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+            this.container.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+            document.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+        }
+        getCoords(clientX, clientY) {
+            const rect = this.container.getBoundingClientRect();
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+            
+            const time = this.chart.timeScale().coordinateToTime(x);
+            const price = this.series.coordinateToPrice(y);
+            
+            return { x, y, time, price };
+        }
+        
+        handleTouchStart(e) {
+             if (e.touches.length > 1) return; // Ignore pinch zoom
+             const touch = e.touches[0];
+             // Simple mapping to mouse events for drawing logic
+             this.handleMouseDown({ clientX: touch.clientX, clientY: touch.clientY, button: 0, preventDefault: ()=>{} });
+        }
+        handleTouchMove(e) {
+            if (e.touches.length > 1) return;
+             const touch = e.touches[0];
+             this.handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+        }
+        handleTouchEnd(e) {
+             this.handleMouseUp(e);
+        }
+
+        handleMouseDown(e) {
+            // if (e.button !== 0) return; // Allow touch which has no button
+            const coords = this.getCoords(e.clientX, e.clientY);
+            
+            // --- Click to Fill Price Logic (Moved to subscribeCrosshairMove) ---
+            // ---------------------------------
+            
+            const handleHit = this.hitTestHandles(coords.x, coords.y);
+            if (handleHit) {
+                this.dragState = {
+                    mode: 'resize',
+                    drawingId: handleHit.drawingId,
+                    pointIndex: handleHit.pointIndex,
+                };
+                this.selectDrawing(handleHit.drawingId);
+                return;
+            }
+            const lineHit = this.hitTestLines(coords.x, coords.y);
+            if (lineHit) {
+                this.selectDrawing(lineHit.id);
+                this.dragState = {
+                    mode: 'move',
+                    drawingId: lineHit.id,
+                    startX: coords.x,
+                    startY: coords.y,
+                    originalPoints: JSON.parse(JSON.stringify(lineHit.points))
+                };
+                return;
+            }
+            if (!coords.time || !coords.price) return;
+            if (currentTool !== 'cursor') {
+                this.deselectAll();
+                
+                if (currentTool === 'trend') {
+                    const id = Date.now();
+                    this.activeDrawing = {
+                        id,
+                        type: 'trend',
+                        points: [
+                            { time: coords.time, price: coords.price },
+                            { time: coords.time, price: coords.price } 
+                        ],
+                        selected: true
+                    };
+                    this.drawings.push(this.activeDrawing);
+                } else if (currentTool === 'horizontal') {
+                    const id = Date.now();
+                    this.activeDrawing = {
+                        id,
+                        type: 'horizontal',
+                        points: [
+                            { time: coords.time, price: coords.price }
+                        ],
+                        selected: true
+                    };
+                    this.drawings.push(this.activeDrawing);
+                    this.activeDrawing = null; 
+                    setTool('cursor'); // Auto switch back on mobile
+                }
+                this.render();
+            } else {
+                this.deselectAll();
+            }
+        }
+        handleMouseMove(e) {
+            const coords = this.getCoords(e.clientX, e.clientY);
+            
+            if (this.activeDrawing && this.activeDrawing.type === 'trend') {
+                 if (coords.time) {
+                     this.activeDrawing.points[1] = { time: coords.time, price: coords.price };
+                     this.render();
+                 }
+                 return;
+            }
+            if (this.dragState) {
+                const drawing = this.drawings.find(d => d.id === this.dragState.drawingId);
+                if (!drawing) return;
+                if (this.dragState.mode === 'resize') {
+                    if (coords.time && coords.price) {
+                        drawing.points[this.dragState.pointIndex] = { time: coords.time, price: coords.price };
+                        if (drawing.type === 'horizontal') {
+                            drawing.points[0].price = coords.price;
+                        }
+                    }
+                } else if (this.dragState.mode === 'move') {
+                    if (coords.time && coords.price) {
+                        const priceDiff = coords.price - this.series.coordinateToPrice(this.dragState.startY);
+                        
+                        drawing.points.forEach((p, i) => {
+                            p.price = this.dragState.originalPoints[i].price + priceDiff;
+                        });
+                        
+                        this.dragState.startY = coords.y;
+                        this.dragState.originalPoints = JSON.parse(JSON.stringify(drawing.points));
+                    }
+                }
+                this.render();
+                return;
+            }
+        }
+        handleMouseUp(e) {
+            if (this.activeDrawing) {
+                this.activeDrawing = null; 
+            }
+            this.dragState = null;
+            this.render();
+        }
+        
+        render() {
+            this.svg.innerHTML = ''; 
+            const width = this.container.clientWidth;
+            const height = this.container.clientHeight;
+            
+            this.drawings.forEach(d => {
+                const color = d.selected ? '#2962ff' : '#26a69a';
+                const strokeWidth = d.selected ? 3 : 2;
+                if (d.type === 'trend') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    const p2 = this.pointToXY(d.points[1]);
+                    
+                    if (p1 && p2) {
+                        let x1, y1, x2, y2;
+                        if (Math.abs(p1.x - p2.x) < 0.01) {
+                            x1 = p1.x; y1 = 0;
+                            x2 = p1.x; y2 = height;
+                        } else {
+                            const m = (p2.y - p1.y) / (p2.x - p1.x);
+                            const c = p1.y - m * p1.x;
+                            x1 = 0; y1 = c;
+                            x2 = width; y2 = m * width + c;
+                        }
+                        this.createSvgLine(x1, y1, x2, y2, color, strokeWidth);
+                        
+                        if (d.selected) {
+                            this.createSvgCircle(p1.x, p1.y, 6, '#fff', color); // Larger handles
+                            this.createSvgCircle(p2.x, p2.y, 6, '#fff', color);
+                        }
+                    }
+                } else if (d.type === 'horizontal') {
+                    const price = d.points[0].price;
+                    const hColor = d.selected ? '#2962ff' : '#72a1ff';
+                    const hStyle = LightweightCharts.LineStyle.Dashed;
+                    
+                    if (!d.priceLine) {
+                        d.priceLine = this.series.createPriceLine({
+                            price: price,
+                            color: hColor,
+                            lineWidth: 1,
+                            lineStyle: hStyle,
+                            axisLabelVisible: true,
+                            title: '',
+                        });
+                    } else {
+                        d.priceLine.applyOptions({
+                            price: price,
+                            color: hColor,
+                            lineWidth: 1,
+                            lineStyle: hStyle
+                        });
+                    }
+                    const p1 = this.pointToXY(d.points[0]);
+                    if (p1 && d.selected) {
+                         this.createSvgCircle(width - 20, p1.y, 6, '#fff', hColor);
+                    }
+                }
+            });
+        }
+        
+        pointToXY(point) {
+            const x = this.chart.timeScale().timeToCoordinate(point.time);
+            const y = this.series.priceToCoordinate(point.price);
+            if (x === null || y === null) return null;
+            return { x, y };
+        }
+        createSvgLine(x1, y1, x2, y2, color, width, isDash = false) {
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", x1);
+            line.setAttribute("y1", y1);
+            line.setAttribute("x2", x2);
+            line.setAttribute("y2", y2);
+            line.setAttribute("stroke", color);
+            line.setAttribute("stroke-width", width);
+            if (isDash) line.setAttribute("stroke-dasharray", "5,5");
+            this.svg.appendChild(line);
+        }
+        createSvgCircle(cx, cy, r, fill, stroke) {
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", cx);
+            circle.setAttribute("cy", cy);
+            circle.setAttribute("r", r);
+            circle.setAttribute("fill", fill);
+            circle.setAttribute("stroke", stroke);
+            circle.setAttribute("stroke-width", 2);
+            this.svg.appendChild(circle);
+        }
+        
+        hitTestHandles(x, y) {
+            const THRESHOLD = 20; // Larger for touch
+            for (const d of this.drawings) {
+                if (!d.selected) continue;
+                
+                if (d.type === 'trend') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    const p2 = this.pointToXY(d.points[1]);
+                    
+                    if (p1 && Math.hypot(p1.x - x, p1.y - y) < THRESHOLD) return { drawingId: d.id, pointIndex: 0 };
+                    if (p2 && Math.hypot(p2.x - x, p2.y - y) < THRESHOLD) return { drawingId: d.id, pointIndex: 1 };
+                } else if (d.type === 'horizontal') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    if (p1) {
+                         const handleX = this.container.clientWidth - 20;
+                         if (Math.hypot(handleX - x, p1.y - y) < THRESHOLD) return { drawingId: d.id, pointIndex: 0 };
+                    }
+                }
+            }
+            return null;
+        }
+        hitTestLines(x, y) {
+            const THRESHOLD = 10;
+            for (const d of this.drawings) {
+                if (d.type === 'trend') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    const p2 = this.pointToXY(d.points[1]);
+                    if (!p1 || !p2) continue;
+                    
+                    const dist = this.distToInfiniteLine({x, y}, p1, p2);
+                    if (dist < THRESHOLD) return d;
+                    
+                } else if (d.type === 'horizontal') {
+                    const p1 = this.pointToXY(d.points[0]);
+                    if (p1 && Math.abs(p1.y - y) < THRESHOLD) return d;
+                }
+            }
+            return null;
+        }
+        distToInfiniteLine(p, v, w) {
+            const num = Math.abs((w.y - v.y)*p.x - (w.x - v.x)*p.y + w.x*v.y - w.y*v.x);
+            const den = Math.sqrt(Math.pow(w.y - v.y, 2) + Math.pow(w.x - v.x, 2));
+            if (den === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+            return num / den;
+        }
+        selectDrawing(id) {
+            this.drawings.forEach(d => d.selected = (d.id === id));
+            this.render();
+        }
+        deselectAll() {
+            this.drawings.forEach(d => d.selected = false);
+            this.render();
+        }
+        removeDrawing(id) {
+            const index = this.drawings.findIndex(d => d.id === id);
+            if (index !== -1) {
+                const d = this.drawings[index];
+                if (d.priceLine) {
+                    this.series.removePriceLine(d.priceLine);
+                }
+                this.drawings.splice(index, 1);
+                this.render();
+            }
+        }
+        clearAll() {
+            if(confirm('Clear all drawings?')) {
+                this.drawings.forEach(d => {
+                    if (d.priceLine) {
+                        this.series.removePriceLine(d.priceLine);
+                    }
+                });
+                this.drawings = [];
+                this.render();
+            }
+        }
+    }
+    
+    function setTool(tool) {
+        currentTool = tool;
+        document.querySelectorAll('.float-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`tool-${tool}`).classList.add('active');
+        
+        if (drawingManager) drawingManager.deselectAll();
+    }
+    function toggleVolume() {
+        const chk = document.getElementById('chk-show-volume');
+        if (volumeSeries) {
+            volumeSeries.applyOptions({
+                visible: chk.checked
+            });
+        }
+    }
+    // --- 初始化圖表 ---
+    function initChart() {
+        const container = document.getElementById('chart-container');
+        chart = LightweightCharts.createChart(container, {
+            layout: {
+                background: { type: 'solid', color: '#121212' },
+                textColor: '#d1d4dc',
+            },
+            grid: {
+                vertLines: { color: '#1f2229' },
+                horzLines: { color: '#1f2229' },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: false,
+                rightOffset: 50,
+            },
+        });
+        candleSeries = chart.addCandlestickSeries({
+            upColor: '#26a69a',
+            downColor: '#ef5350',
+            borderVisible: false,
+            wickUpColor: '#26a69a',
+            wickDownColor: '#ef5350',
+        });
+        volumeSeries = chart.addHistogramSeries({
+            color: '#26a69a',
+            priceFormat: {
+                type: 'volume',
+            },
+            priceScaleId: 'volume',
+        });
+        chart.priceScale('volume').applyOptions({
+            scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+            },
+        });
+        // Main Price Scale Margins (15% top padding)
+        chart.priceScale('right').applyOptions({
+            scaleMargins: {
+                top: 0.15,
+                bottom: 0.1,
+            },
+        });
+        const svgLayer = document.getElementById('drawing-overlay');
+        drawingManager = new DrawingManager(chart, candleSeries, svgLayer, container);
+        
+        // Update Limit Price Input on Crosshair Move
+        chart.subscribeCrosshairMove(param => {
+            if (!param.point || !candleSeries) return;
+            if (currentTool === 'cursor') {
+                if (drawingManager && drawingManager.dragState) return;
+                const price = candleSeries.coordinateToPrice(param.point.y);
+                const priceInput = document.getElementById('limit-price-input');
+                if (priceInput && price !== null) {
+                    priceInput.value = parseFloat(price).toFixed(2);
+                }
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            chart.resize(container.clientWidth, container.clientHeight);
+            drawingManager.render();
+            updateOrderButtons();
+        });
+        
+        const now = new Date();
+        const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        document.getElementById('bt-start').value = toLocalISO(past);
+        
+        // Infinite Scroll (Left) & Button Sync
+        chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            onVisibleLogicalRangeChanged(range);
+            updateOrderButtons();
+        });
+        
+        // Initial Fetch of Symbols (Skipping full fetch to keep it light, defaulting to BTC)
+        // fetchAndPopulateSymbols(); 
+    }
+    
+    // ... [Include other helper functions like onVisibleLogicalRangeChanged, checkAndLoadHistoryLeft, toLocalISO] ...
+    function onVisibleLogicalRangeChanged(newRange) {
+        if (!newRange) return;
+        if (newRange.from < 10) {
+            checkAndLoadHistoryLeft();
+        }
+    }
+    async function checkAndLoadHistoryLeft() {
+        if (isPreloadingHistory) return;
+        let oldestTime = 0;
+        if (currentMode === 'realtime') {
+            if (currentData.length === 0) return;
+            oldestTime = currentData[0].time;
+        } else {
+            if (backtestData.length === 0) return;
+            oldestTime = backtestData[0].time;
+        }
+        isPreloadingHistory = true;
+        const endTime = (oldestTime * 1000) - 1;
+        const api = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=${currentInterval}&endTime=${endTime}&limit=1000`;
+        
+        try {
+            const response = await fetch(api);
+            const data = await response.json();
+            
+            if (Array.isArray(data) && data.length > 0) {
+                const newCandles = data.map(d => ({
+                    time: d[0] / 1000,
+                    open: parseFloat(d[1]),
+                    high: parseFloat(d[2]),
+                    low: parseFloat(d[3]),
+                    close: parseFloat(d[4]),
+                    volume: parseFloat(d[5])
+                }));
+                
+                if (currentMode === 'realtime') {
+                    currentData = newCandles.concat(currentData);
+                    candleSeries.setData(currentData);
+                    volumeSeries.setData(currentData.map(d => ({
+                        time: d.time,
+                        value: d.volume,
+                        color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                    })));
+                } else {
+                    backtestData = newCandles.concat(backtestData);
+                    backtestIndex += newCandles.length;
+                    renderBacktest();
+                }
+            }
+        } catch (e) { console.error(e); } finally { isPreloadingHistory = false; }
+    }
+    
+    function toLocalISO(date) {
+        const pad = (n) => n < 10 ? '0' + n : n;
+        return date.getFullYear() + '-' + 
+               pad(date.getMonth() + 1) + '-' + 
+               pad(date.getDate()) + 'T' + 
+               pad(date.getHours()) + ':' + 
+               pad(date.getMinutes());
+    }
+
+    function switchMode(mode) {
+        syncGlobalToState();
+        pendingOrders.forEach(o => { 
+            if (o.line) candleSeries.removePriceLine(o.line); 
+            if (o.btn) o.btn.remove();
+        });
+        currentMode = mode;
+        syncStateToGlobal();
+        
+        // Mobile UI Updates
+        document.getElementById('mode-rt').classList.toggle('active', mode === 'realtime');
+        document.getElementById('mode-bt').classList.toggle('active', mode === 'backtest');
+        document.getElementById('bt-settings').style.display = mode === 'backtest' ? 'block' : 'none';
+        document.getElementById('playback-bar').style.display = mode === 'backtest' ? 'flex' : 'none';
+        
+        if (currentMode === 'realtime') {
+            stopPlay(); 
+            onParamChange(); 
+        } else {
+            if (ws) { ws.close(); ws = null; }
+            candleSeries.setData([]);
+            volumeSeries.setData([]);
+            if (drawingManager) drawingManager.render();
+            if (document.getElementById('bt-start').value) {
+                startBacktest(true);
+            }
+        }
+        updateTradingUI();
+    }
+    // --- Initialization & Header Logic ---
+    async function fetchAndPopulateSymbols() {
+        try {
+            const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+            const data = await res.json();
+            const usdtPairs = data.filter(t => t.symbol.endsWith('USDT'))
+                                  .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+            const datalist = document.getElementById('symbol-options');
+            datalist.innerHTML = '';
+            usdtPairs.forEach(t => {
+                const option = document.createElement('option');
+                option.value = t.symbol;
+                datalist.appendChild(option);
+            });
+        } catch (e) { console.error("Failed to fetch symbols", e); }
+    }
+
+    function onHeaderParamChange() {
+        const hSymbol = document.getElementById('header-symbol-input').value.trim().toUpperCase();
+        const hInterval = document.getElementById('header-interval-select').value;
+        
+        // Sync to hidden/original inputs
+        document.getElementById('symbol-input').value = hSymbol;
+        document.getElementById('interval-select').value = hInterval;
+        
+        onParamChange();
+    }
+
+    function onParamChange() {
+        const symbolInput = document.getElementById('symbol-input');
+        const intervalSelect = document.getElementById('interval-select');
+        
+        let val = symbolInput.value.trim().toUpperCase();
+        if (!val) { val = 'BTCUSDT'; symbolInput.value = val; }
+        
+        // Sync back to Header
+        document.getElementById('header-symbol-input').value = val;
+        document.getElementById('header-interval-select').value = intervalSelect.value;
+        
+        syncGlobalToState();
+        pendingOrders.forEach(o => { 
+            if (o.line) candleSeries.removePriceLine(o.line); 
+            if (o.btn) o.btn.remove();
+        });
+        currentSymbol = val;
+        currentInterval = intervalSelect.value;
+        syncStateToGlobal();
+        currentSymbol = val;
+        currentInterval = intervalSelect.value;
+        syncStateToGlobal();
+
+        // Update Header (Redundant but safe)
+        // document.getElementById('display-symbol').innerText = currentSymbol; 
+        // document.getElementById('display-interval').innerText = `${currentInterval} • ${currentMode === 'realtime' ? 'Realtime' : 'Backtest'}`;
+
+        if (currentMode === 'realtime') {
+            startRealtimeMode();
+        } else {
+            if (document.getElementById('bt-start').value) startBacktest();
+        }
+    }
+    
+    // --- Original Logic (Copied & Adapted) ---
+    function startRealtimeMode() {
+        if (ws) { ws.close(); ws = null; }
+        latestRealtimePrice = 0;
+        document.getElementById('loading').style.display = 'flex';
+        fetchHistoricalData();
+    }
+    async function fetchHistoricalData() {
+        const api = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=${currentInterval}&limit=${LIMIT}`;
+        try {
+            const response = await fetch(api);
+            const data = await response.json();
+            const formattedData = data.map(d => ({
+                time: d[0] / 1000,
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4]),
+                volume: parseFloat(d[5])
+            }));
+            currentData = formattedData;
+            candleSeries.setData(currentData);
+            volumeSeries.setData(currentData.map(d => ({
+                time: d.time,
+                value: d.volume,
+                color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+            })));
+            
+            // Auto-scale
+            chart.timeScale().fitContent();
+            
+            document.getElementById('loading').style.display = 'none';
+            startWebSocket();
+        } catch (error) {
+            console.error('Fetch error:', error);
+            document.getElementById('loading').style.display = 'none';
+        }
+    }
+    
+    function formatUTC(timestamp) {
+        const date = new Date(timestamp);
+        const pad = (n) => n < 10 ? '0' + n : n;
+        return `${date.getUTCFullYear()}/${pad(date.getUTCMonth() + 1)}/${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+    }
+
+    function updateHeaderTime(timestamp) {
+        const el = document.getElementById('header-tick-time');
+        if (el) el.innerText = formatUTC(timestamp);
+    }
+
+    function startWebSocket() {
+        if (ws) {
+            ws.onclose = null; // Prevent old socket from affecting UI
+            ws.onmessage = null;
+            ws.onerror = null;
+            ws.close();
+        }
+        const s = currentSymbol.toLowerCase();
+        const i = currentInterval;
+        const wsUrl = `wss://stream.binance.com:9443/stream?streams=${s}@kline_${i}/${s}@aggTrade`;
+        
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+             document.getElementById('status-indicator').classList.add('active');
+        };
+        ws.onmessage = (event) => {
+            // Ensure status is active if we are receiving data
+            const indicator = document.getElementById('status-indicator');
+            if (!indicator.classList.contains('active')) indicator.classList.add('active');
+
+            const msg = JSON.parse(event.data);
+            const type = msg.data.e;
+            
+            if (type === 'kline') {
+                const k = msg.data.k;
+                const candle = {
+                    time: k.t / 1000,
+                    open: parseFloat(k.o),
+                    high: parseFloat(k.h),
+                    low: parseFloat(k.l),
+                    close: parseFloat(k.c),
+                    volume: parseFloat(k.v)
+                };
+                latestRealtimePrice = candle.close;
+                candleSeries.update(candle);
+                volumeSeries.update({
+                    time: candle.time,
+                    value: candle.volume,
+                    color: candle.close >= candle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                });
+                
+                const lastCandle = currentData[currentData.length - 1];
+                if (lastCandle && lastCandle.time === candle.time) {
+                    currentData[currentData.length - 1] = candle;
+                } else {
+                    currentData.push(candle);
+                }
+                updateTradingUI();
+                
+            } else if (type === 'aggTrade') {
+                const trade = msg.data;
+                const price = parseFloat(trade.p);
+                const quantity = parseFloat(trade.q);
+                const time = trade.E;
+                
+                updateHeaderTime(time); // Update Header Time
+                
+                latestRealtimePrice = price;
+                checkPendingOrders(price, price);
+                
+                if (currentData.length > 0) {
+                    const currentCandle = currentData[currentData.length - 1];
+                    const tradeTimeSec = Math.floor(time / 1000);
+                    if (tradeTimeSec >= currentCandle.time) {
+                        currentCandle.close = price;
+                        if (price > currentCandle.high) currentCandle.high = price;
+                        if (price < currentCandle.low) currentCandle.low = price;
+                        currentCandle.volume = (currentCandle.volume || 0) + quantity;
+                        candleSeries.update(currentCandle);
+                        volumeSeries.update({
+                            time: currentCandle.time,
+                            value: currentCandle.volume,
+                            color: currentCandle.close >= currentCandle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                        });
+                    }
+                }
+                updateTradingUI();
+            }
+        };
+        ws.onclose = () => {
+             document.getElementById('status-indicator').classList.remove('active');
+        };
+    }
+    
+    function formatPrice(price) { return parseFloat(price).toFixed(2); }
+    
+    async function startBacktest(preserveState = false) {
+        stopPlay();
+        if (ws) ws.close();
+        const startInput = document.getElementById('bt-start').value;
+        if (!startInput) return;
+        
+        const userStartTime = new Date(startInput).getTime();
+        const intervalMs = getIntervalMs(currentInterval);
+        const fetchStartTime = userStartTime - (240 * intervalMs);
+        
+        document.getElementById('loading').style.display = 'flex';
+        
+        if (!preserveState) resetTradingState();
+        backtestData = [];
+        tickCache.clear();
+        
+        const initialData = await fetchKlinesLoop(fetchStartTime, 1000); 
+        if (initialData.length === 0) {
+            document.getElementById('loading').style.display = 'none';
+            return;
+        }
+        backtestData = initialData;
+        const userTimeSec = userStartTime / 1000;
+        let foundIndex = backtestData.findIndex(d => d.time >= userTimeSec);
+        if (foundIndex === -1) foundIndex = backtestData.length - 1; 
+        backtestIndex = foundIndex;
+        
+        renderBacktest();
+        chart.timeScale().fitContent(); // Auto-scale
+        
+        document.getElementById('loading').style.display = 'none';
+    }
+    // ... [fetchKlinesLoop same as original] ...
+    async function fetchKlinesLoop(startTime, limit) {
+        let api = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=${currentInterval}&startTime=${startTime}&limit=${limit}`;
+        try {
+            const response = await fetch(api);
+            const data = await response.json();
+            if (!Array.isArray(data)) return [];
+            return data.map(d => ({
+                time: d[0] / 1000,
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4]),
+                volume: parseFloat(d[5])
+            }));
+        } catch (e) { return []; }
+    }
+    // ... [checkAndLoadMoreHistory same as original] ...
+    async function checkAndLoadMoreHistory() {
+        if (isLoadingMore) return;
+        if (backtestData.length - backtestIndex < 200) {
+            isLoadingMore = true;
+            const lastCandle = backtestData[backtestData.length - 1];
+            const nextStartTime = (lastCandle.time * 1000) + getIntervalMs(currentInterval);
+            const moreData = await fetchKlinesLoop(nextStartTime, 1000);
+            if (moreData.length > 0) {
+                if (moreData[0].time === lastCandle.time) moreData.shift();
+                backtestData = backtestData.concat(moreData);
+            }
+            isLoadingMore = false;
+        }
+    }
+    function renderBacktest() {
+        if (backtestData.length === 0) return;
+        if (backtestIndex < 0) backtestIndex = 0;
+        if (backtestIndex >= backtestData.length) backtestIndex = backtestData.length - 1;
+        const visibleData = backtestData.slice(0, backtestIndex + 1);
+        candleSeries.setData(visibleData);
+        volumeSeries.setData(visibleData.map(d => ({
+            time: d.time,
+            value: d.volume,
+            color: d.close >= d.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+        })));
+        updateTradingUI(); 
+        checkAndLoadMoreHistory();
+        if (drawingManager) drawingManager.render();
+    }
+    function stepForward() {
+        if (backtestIndex < backtestData.length - 1) {
+            backtestIndex++;
+            const bar = backtestData[backtestIndex];
+            checkPendingOrders(bar.high, bar.low);
+            renderBacktest();
+            updateHeaderTime(bar.time * 1000);
+        } else {
+             if (!isLoadingMore) stopPlay();
+        }
+    }
+    function stepBackward() {
+        if (backtestIndex > 0) {
+            backtestIndex--;
+            renderBacktest();
+            updateHeaderTime(backtestData[backtestIndex].time * 1000);
+        }
+    }
+    function togglePlay() {
+        if (isPlaying) stopPlay();
+        else startPlay();
+    }
+    function startPlay() {
+        if (backtestData.length === 0) return;
+        isPlaying = true;
+        document.getElementById('btn-play-mobile').innerText = "⏸";
+        updateSpeed();
+        scheduleNextStep();
+    }
+    function stopPlay() {
+        isPlaying = false;
+        document.getElementById('btn-play-mobile').innerText = "▶";
+        if (playIntervalId) clearTimeout(playIntervalId);
+        if (countdownIntervalId) clearInterval(countdownIntervalId);
+        tickQueue = [];
+        isFetchingTicks = false;
+        currentTickCandle = null;
+    }
+    function updateSpeed() {
+        const select = document.getElementById('play-speed');
+        playSpeed = select.value;
+        if (isPlaying) {
+            if (playIntervalId) clearTimeout(playIntervalId);
+            if (countdownIntervalId) clearInterval(countdownIntervalId);
+            scheduleNextStep();
+        }
+    }
+    // ... [scheduleNextStep, preloadNextTicks, manageTickCacheSize, fetch1sKlinesBatch, distributeTicksToCache, fetchSecondKlines, startTickReplayForBar, playNextTick, getIntervalMs, startCountdown] ...
+    // Note: Inserting compacted version of logic to save space, but functional
+    async function scheduleNextStep() {
+        if (!isPlaying) return;
+        if (!playSpeed.startsWith('realtime')) {
+             const delay = parseInt(playSpeed);
+             nextStepTime = Date.now() + delay;
+             // startCountdown(nextStepTime); // Visual not needed on mobile
+             playIntervalId = setTimeout(() => {
+                 stepForward();
+                 if (isPlaying) scheduleNextStep();
+             }, delay);
+             return;
+        }
+        if (tickQueue.length > 0) { playNextTick(); return; }
+        if (backtestIndex >= backtestData.length - 1) {
+            if (isLoadingMore) setTimeout(scheduleNextStep, 500);
+            else stopPlay();
+            return;
+        }
+        const nextBar = backtestData[backtestIndex + 1];
+        const nextBarKey = nextBar.time;
+        if (tickCache.has(nextBarKey)) {
+            startTickReplayForBar(nextBar, tickCache.get(nextBarKey));
+            preloadNextTicks(backtestIndex + 2);
+            return;
+        }
+        if (isFetchingTicks) return;
+        isFetchingTicks = true;
+        
+        try {
+            if (document.getElementById('chk-use-agg-trade').checked) {
+                const ticks = await fetchSecondKlines(nextBar);
+                if (ticks && ticks.length > 0) {
+                    tickCache.set(nextBarKey, ticks);
+                    startTickReplayForBar(nextBar, ticks);
+                } else { stepForward(); scheduleNextStep(); }
+            } else {
+                await preloadNextTicks(backtestIndex);
+                if (tickCache.has(nextBarKey)) startTickReplayForBar(nextBar, tickCache.get(nextBarKey));
+                else { stepForward(); scheduleNextStep(); }
+            }
+            isFetchingTicks = false;
+            if (!isPlaying) return;
+            preloadNextTicks(backtestIndex + 2);
+        } catch (e) { isFetchingTicks = false; stepForward(); scheduleNextStep(); }
+    }
+    async function preloadNextTicks(startIndex) {
+        const useAggTrade = document.getElementById('chk-use-agg-trade').checked;
+        if (useAggTrade) {
+            for (let i = 0; i < 3; i++) {
+                const idx = startIndex + i;
+                if (idx >= backtestData.length) break;
+                const bar = backtestData[idx];
+                if (!tickCache.has(bar.time)) {
+                    fetchSecondKlines(bar).then(ticks => {
+                        if (ticks && ticks.length > 0) { tickCache.set(bar.time, ticks); manageTickCacheSize(); }
+                    });
+                }
+            }
+            return;
+        }
+        // Non-agg logic simplified
+        let bufferedCount = 0;
+        let gapStartTime = -1;
+        let startIdx = backtestIndex + 1;
+        for (let i = 0; i < 20; i++) {
+            const idx = startIdx + i;
+            if (idx >= backtestData.length) break;
+            const bar = backtestData[idx];
+            const cached = tickCache.get(bar.time) || [];
+            bufferedCount += cached.length;
+            const duration = getIntervalMs(currentInterval) / 1000;
+            const expectedEnd = bar.time + duration - 1;
+            let lastTickInCache = cached.length > 0 ? cached[cached.length - 1].time : bar.time - 1;
+            if (lastTickInCache < expectedEnd && gapStartTime === -1) gapStartTime = lastTickInCache + 1;
+            if (bufferedCount >= 1000) break;
+        }
+        if (bufferedCount < 1000 && gapStartTime !== -1) {
+            const items = await fetch1sKlinesBatch(gapStartTime);
+            if (items.length > 0) { distributeTicksToCache(items); }
+        }
+    }
+    function manageTickCacheSize() {
+        if (tickCache.size > TICK_CACHE_SIZE) {
+            const keys = tickCache.keys();
+            const first = keys.next().value;
+            if (first < backtestData[backtestIndex].time) tickCache.delete(first);
+        }
+    }
+    async function fetch1sKlinesBatch(startTime) {
+        const url = `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=1s&startTime=${startTime*1000}&limit=1000`;
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (Array.isArray(data)) return data.map(d => ({ time: d[0]/1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), isTrade: false }));
+        } catch(e) {}
+        return [];
+    }
+    function distributeTicksToCache(items) {
+        const intervalSec = getIntervalMs(currentInterval) / 1000;
+        items.forEach(item => {
+             const barTime = Math.floor(item.time / intervalSec) * intervalSec;
+             if (!tickCache.has(barTime)) tickCache.set(barTime, []);
+             const bucket = tickCache.get(barTime);
+             if (bucket.length === 0 || bucket[bucket.length-1].time < item.time) bucket.push(item);
+        });
+        manageTickCacheSize();
+    }
+    async function fetchSecondKlines(bar) {
+        const startTime = bar.time * 1000;
+        const durationMs = getIntervalMs(currentInterval);
+        const endTime = startTime + durationMs - 1;
+        const useAggTrade = document.getElementById('chk-use-agg-trade').checked;
+        let url = useAggTrade ? `https://api.binance.com/api/v3/aggTrades?symbol=${currentSymbol}&startTime=${startTime}&endTime=${endTime}&limit=1000` : `https://api.binance.com/api/v3/klines?symbol=${currentSymbol}&interval=1s&startTime=${startTime}&limit=${Math.min(1000, durationMs/1000)}`;
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                if (useAggTrade) return data.map(d => ({ time: d.T/1000, price: parseFloat(d.p), quantity: parseFloat(d.q), isTrade: true })).sort((a,b) => a.time - b.time);
+                else return data.map(d => ({ time: d[0]/1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5]), isTrade: false }));
+            }
+        } catch (e) {}
+        return [];
+    }
+    function startTickReplayForBar(bar, ticks) {
+        tickQueue = [...ticks]; 
+        simBaseTime = bar.time; 
+        replayBaseTime = performance.now(); 
+        lastReplayedTickTime = bar.time - 1; 
+        currentTickCandle = { time: bar.time, open: bar.open, high: ticks.length > 0 ? (ticks[0].isTrade ? ticks[0].price : ticks[0].high) : bar.open, low: ticks.length > 0 ? (ticks[0].isTrade ? ticks[0].price : ticks[0].low) : bar.open, close: ticks.length > 0 ? (ticks[0].isTrade ? ticks[0].price : ticks[0].close) : bar.open, volume: 0 };
+        candleSeries.update(currentTickCandle);
+        volumeSeries.update({ time: currentTickCandle.time, value: currentTickCandle.volume, color: currentTickCandle.close >= currentTickCandle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)' });
+        playNextTick();
+    }
+    function playNextTick() {
+        if (!isPlaying) return;
+        let speedFactor = playSpeed.startsWith('realtime') ? parseInt(playSpeed.split('_')[1]) : 10000;
+        const wallElapsed = performance.now() - replayBaseTime;
+        const simElapsed = (wallElapsed * speedFactor) / 1000;
+        const currentSimTime = simBaseTime + simElapsed;
+        let processed = false;
+        let lastTick = null;
+        while (tickQueue.length > 0 && tickQueue[0].time <= currentSimTime) {
+            const tick = tickQueue.shift();
+            lastTick = tick;
+            processed = true;
+            if (tick.isTrade) {
+                currentTickCandle.close = tick.price;
+                if (tick.price > currentTickCandle.high) currentTickCandle.high = tick.price;
+                if (tick.price < currentTickCandle.low) currentTickCandle.low = tick.price;
+                currentTickCandle.volume += tick.quantity;
+                checkPendingOrders(tick.price, tick.price);
+            } else {
+                currentTickCandle.high = Math.max(currentTickCandle.high, tick.high);
+                currentTickCandle.low = Math.min(currentTickCandle.low, tick.low);
+                currentTickCandle.close = tick.close;
+                currentTickCandle.volume += tick.volume;
+                checkPendingOrders(tick.high, tick.low);
+            }
+        }
+        if (processed) {
+            candleSeries.update(currentTickCandle);
+            volumeSeries.update({ time: currentTickCandle.time, value: currentTickCandle.volume, color: currentTickCandle.close >= currentTickCandle.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)' });
+            updateTradingUI();
+            if (lastTick) {
+                lastReplayedTickTime = lastTick.time;
+                updateHeaderTime(lastTick.time * 1000);
+            }
+        }
+        if (tickQueue.length === 0) {
+            const useAggTrade = document.getElementById('chk-use-agg-trade').checked;
+            if (!useAggTrade) {
+                 const intervalSec = getIntervalMs(currentInterval) / 1000;
+                 if (currentSimTime < simBaseTime + intervalSec - 1) {
+                     const cached = tickCache.get(simBaseTime) || [];
+                     const newTicks = cached.filter(t => t.time > lastReplayedTickTime);
+                     if (newTicks.length > 0) { tickQueue.push(...newTicks); playNextTick(); return; }
+                     else { preloadNextTicks(backtestIndex); playIntervalId = setTimeout(playNextTick, 200); return; }
+                 }
+            }
+            stepForward(); scheduleNextStep();
+        } else {
+            const nextTickTime = tickQueue[0].time;
+            const simWait = nextTickTime - currentSimTime; 
+            const wallWait = (simWait * 1000) / speedFactor; 
+            playIntervalId = setTimeout(playNextTick, Math.max(0, wallWait));
+        }
+    }
+    function getIntervalMs(interval) {
+        const unit = interval.slice(-1);
+        const val = parseInt(interval);
+        if (unit === 'm') return val * 60 * 1000;
+        if (unit === 'h') return val * 60 * 60 * 1000;
+        if (unit === 'd') return val * 24 * 60 * 60 * 1000;
+        return 60000;
+    }
+
+    function resetTradingState() {
+        positionSize = 0;
+        entryPrice = 0;
+        clearPendingOrders();
+        updateTradingUI();
+    }
+    function getCurrentPrice() {
+        if (currentMode === 'backtest') {
+            if (currentTickCandle) return currentTickCandle.close;
+            if (backtestData.length > 0 && backtestIndex >= 0) return backtestData[backtestIndex].close;
+        } else {
+             if (latestRealtimePrice > 0) return latestRealtimePrice;
+             if (currentData.length > 0) return currentData[currentData.length-1].close;
+        }
+        return 0;
+    }
+    function placeOrder(side, type) {
+        if ((currentMode === 'backtest' && backtestData.length === 0) || (currentMode === 'realtime' && currentData.length === 0)) return;
+        
+        const qtyInput = parseFloat(document.getElementById('trade-qty').value);
+        if (isNaN(qtyInput) || qtyInput <= 0) { alert("Invalid Qty"); return; }
+
+        if (type === 'limit') {
+            const limitPrice = parseFloat(document.getElementById('limit-price-input').value);
+            if (isNaN(limitPrice) || limitPrice <= 0) { alert("Invalid Price"); return; }
+            createLimitOrder(side, limitPrice, qtyInput);
+        } else {
+             const currentPrice = getCurrentPrice();
+             if (currentPrice === 0) return;
+             processFill(side, currentPrice, qtyInput, TAKER_FEE);
+        }
+    }
+    function createLimitOrder(side, price, qty) {
+        const currentPrice = getCurrentPrice();
+        if (currentPrice > 0) {
+            if ((side === 'buy' && price >= currentPrice) || (side === 'sell' && price <= currentPrice)) {
+                processFill(side, currentPrice, qty, TAKER_FEE); return;
+            }
+        }
+        const id = Date.now() + Math.random();
+        const color = side === 'buy' ? '#26a69a' : '#ef5350';
+        const line = candleSeries.createPriceLine({
+            price: price, color: color, lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: `${side.toUpperCase()} ${qty}`,
+        });
+        
+        // Create Cancel Button
+        const btn = document.createElement('div');
+        btn.className = 'order-cancel-btn';
+        btn.innerText = '×';
+        btn.onclick = (e) => { e.stopPropagation(); cancelSingleOrder(id); };
+        document.getElementById('chart-container').appendChild(btn);
+        
+        pendingOrders.push({ id: id, side: side, price: price, qty: qty, line: line, btn: btn });
+        updateOrderButtons(); // Initial position
+    }
+
+    function cancelSingleOrder(id) {
+        const index = pendingOrders.findIndex(o => o.id === id);
+        if (index !== -1) {
+            const order = pendingOrders[index];
+            if (order.line) candleSeries.removePriceLine(order.line);
+            if (order.btn) order.btn.remove();
+            pendingOrders.splice(index, 1);
+        }
+    }
+
+    function updateOrderButtons() {
+        if (!candleSeries) return;
+        pendingOrders.forEach(order => {
+            const y = candleSeries.priceToCoordinate(order.price);
+            if (y === null) {
+                order.btn.style.display = 'none';
+            } else {
+                order.btn.style.display = 'block';
+                order.btn.style.top = (y - 9) + 'px'; // Center vertically (height 18/2)
+            }
+        });
+    }
+
+    function processFill(side, currentPrice, tradeQty, feeRate) {
+        let tradeTime = 0;
+        if (currentMode === 'backtest') {
+            if (currentTickCandle) tradeTime = currentTickCandle.time;
+            else if (backtestData.length > 0) tradeTime = backtestData[backtestIndex].time;
+        } else {
+            tradeTime = currentData.length > 0 ? currentData[currentData.length - 1].time : Math.floor(Date.now() / 1000);
+        }
+        const tradeFee = currentPrice * tradeQty * feeRate;
+        realizedPnL -= tradeFee; 
+        let type = '';
+        if (positionSize === 0) {
+            positionSize = (side === 'buy') ? tradeQty : -tradeQty;
+            entryPrice = currentPrice;
+            type = (side === 'buy') ? 'OPEN_LONG' : 'OPEN_SHORT';
+            tradeHistory.push({ time: tradeTime, symbol: currentSymbol, type: type, price: currentPrice, qty: tradeQty, fee: tradeFee, pnl: -tradeFee });
+        } else if ((positionSize > 0 && side === 'buy') || (positionSize < 0 && side === 'sell')) {
+            const totalVal = (Math.abs(positionSize) * entryPrice) + (tradeQty * currentPrice);
+            const newSize = Math.abs(positionSize) + tradeQty;
+            entryPrice = totalVal / newSize;
+            positionSize += (side === 'buy') ? tradeQty : -tradeQty;
+            type = (side === 'buy') ? 'ADD_LONG' : 'ADD_SHORT';
+            tradeHistory.push({ time: tradeTime, symbol: currentSymbol, type: type, price: currentPrice, qty: tradeQty, fee: tradeFee, pnl: -tradeFee });
+        } else {
+            const posAbs = Math.abs(positionSize);
+            let qtyToClose = (tradeQty <= posAbs) ? tradeQty : posAbs;
+            let qtyToOpen = (tradeQty > posAbs) ? tradeQty - posAbs : 0;
+            
+            const direction = positionSize > 0 ? 1 : -1;
+            const realized = (currentPrice - entryPrice) * direction * qtyToClose;
+            realizedPnL += realized;
+            positionSize += (positionSize > 0) ? -qtyToClose : qtyToClose;
+            type = (side === 'buy') ? 'CLOSE_SHORT' : 'CLOSE_LONG'; 
+            tradeHistory.push({ time: tradeTime, symbol: currentSymbol, type: type, price: currentPrice, qty: qtyToClose, fee: tradeFee, pnl: realized - tradeFee });
+            
+            if (qtyToOpen > 0) {
+                positionSize = (side === 'buy') ? qtyToOpen : -qtyToOpen;
+                entryPrice = currentPrice;
+                type = (side === 'buy') ? 'OPEN_LONG' : 'OPEN_SHORT';
+                tradeHistory.push({ time: tradeTime, symbol: currentSymbol, type: type, price: currentPrice, qty: qtyToOpen, fee: 0, pnl: 0 });
+            }
+        }
+        updateTradingUI();
+    }
+    function checkPendingOrders(high, low) {
+        if (pendingOrders.length === 0) return;
+        for (let i = pendingOrders.length - 1; i >= 0; i--) {
+            const order = pendingOrders[i];
+            let filled = false;
+            if (order.side === 'buy' && low <= order.price) filled = true;
+            else if (order.side === 'sell' && high >= order.price) filled = true;
+            if (filled) {
+                if (order.line) candleSeries.removePriceLine(order.line);
+                if (order.btn) order.btn.remove();
+                processFill(order.side, order.price, order.qty, MAKER_FEE);
+                pendingOrders.splice(i, 1);
+            }
+        }
+    }
+    function closePosition() {
+        if (positionSize === 0) return;
+        const currentPrice = getCurrentPrice();
+        const tradeQty = Math.abs(positionSize);
+        const tradeFee = currentPrice * tradeQty * TAKER_FEE;
+        const pnl = (currentPrice - entryPrice) * positionSize;
+        realizedPnL += (pnl - tradeFee);
+        
+        let tradeTime = 0;
+        if (currentMode === 'backtest') {
+             if (currentTickCandle) tradeTime = currentTickCandle.time;
+             else if (backtestData.length > 0) tradeTime = backtestData[backtestIndex].time;
+        } else {
+             tradeTime = currentData.length > 0 ? currentData[currentData.length - 1].time : Math.floor(Date.now() / 1000);
+        }
+        tradeHistory.push({ time: tradeTime, symbol: currentSymbol, type: positionSize > 0 ? 'CLOSE_LONG' : 'CLOSE_SHORT', price: currentPrice, qty: tradeQty, fee: tradeFee, pnl: pnl - tradeFee });
+        positionSize = 0; entryPrice = 0;
+        updateTradingUI();
+    }
+    function updateTradingUI() {
+        const posSizeEl = document.getElementById('pos-size');
+        const unrealizedEl = document.getElementById('pnl-unrealized');
+        const realizedEl = document.getElementById('pnl-realized');
+        
+        posSizeEl.innerText = positionSize.toFixed(4);
+        
+        if (positionSize === 0) {
+            unrealizedEl.innerText = "0.00";
+            unrealizedEl.style.color = "#d1d4dc";
+            posSizeEl.style.color = "#d1d4dc";
+        } else {
+            const currentPrice = getCurrentPrice();
+            const unrealized = (currentPrice - entryPrice) * positionSize;
+            const pnlPercent = entryPrice !== 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 * (positionSize > 0 ? 1 : -1) : 0;
+            
+            unrealizedEl.innerText = `${formatPrice(unrealized)} (${pnlPercent.toFixed(2)}%)`;
+            if (unrealized > 0) unrealizedEl.style.color = "#26a69a"; 
+            else if (unrealized < 0) unrealizedEl.style.color = "#ef5350"; 
+            
+            posSizeEl.style.color = positionSize > 0 ? "#26a69a" : "#ef5350";
+        }
+        
+        realizedEl.innerText = formatPrice(realizedPnL);
+        realizedEl.style.color = realizedPnL >= 0 ? "#26a69a" : "#ef5350";
+        updateMarkers();
+    }
+    function updateMarkers() {
+        if (!candleSeries) return;
+        const buys = ['OPEN_LONG', 'ADD_LONG', 'CLOSE_SHORT'];
+        const sells = ['OPEN_SHORT', 'ADD_SHORT', 'CLOSE_LONG'];
+        const markers = tradeHistory
+            .filter(t => (t.symbol || currentSymbol) === currentSymbol)
+            .map(t => {
+                if (buys.includes(t.type)) return { time: t.time, position: 'belowBar', color: '#26a69a', shape: 'arrowUp', text: 'B' };
+                else if (sells.includes(t.type)) return { time: t.time, position: 'aboveBar', color: '#ef5350', shape: 'arrowDown', text: 'S' };
+                return null;
+            })
+            .filter(m => m !== null).sort((a, b) => a.time - b.time);
+        candleSeries.setMarkers(markers);
+    }
+    // ... [generateReport, updateStatBox, formatDateWithSeconds - Simplified for mobile] ...
+    function generateReport() {
+        const tableBody = document.querySelector('#report-table tbody');
+        tableBody.innerHTML = '';
+        
+        const fillsWithPnL = tradeHistory.filter(t => t.pnl !== 0);
+        const totalTrades = fillsWithPnL.length;
+        const winningTrades = fillsWithPnL.filter(t => t.pnl > 0);
+        const losingTrades = fillsWithPnL.filter(t => t.pnl < 0);
+        
+        const winCount = winningTrades.length;
+        const lossCount = losingTrades.length;
+        const winRate = totalTrades > 0 ? (winCount / totalTrades * 100).toFixed(0) : 0;
+        const totalWin = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
+        const totalLoss = Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0));
+        const profitFactor = totalLoss > 0 ? (totalWin / totalLoss).toFixed(2) : (totalWin > 0 ? '∞' : '0.00');
+        const totalFees = tradeHistory.reduce((sum, t) => sum + (t.fee || 0), 0);
+
+        let unrealized = 0;
+        if (positionSize !== 0) {
+            const currentPrice = getCurrentPrice();
+            unrealized = (currentPrice - entryPrice) * positionSize;
+        }
+
+        document.getElementById('report-win-rate').innerText = `${winRate}% (${winCount}/${lossCount})`;
+        document.getElementById('report-profit-factor').innerText = profitFactor;
+        document.getElementById('report-total-pnl').innerText = formatPrice(realizedPnL);
+        document.getElementById('report-total-pnl').className = realizedPnL >= 0 ? 'text-green' : 'text-red';
+        document.getElementById('report-total-fees').innerText = formatPrice(totalFees);
+        document.getElementById('report-unrealized').innerText = formatPrice(unrealized);
+        document.getElementById('report-unrealized').className = unrealized >= 0 ? 'text-green' : 'text-red';
+
+        const sortedHistory = [...tradeHistory].reverse().slice(0, 50); // Limit to last 50 for mobile perf
+        sortedHistory.forEach(t => {
+            const row = document.createElement('tr');
+            const timeStr = formatUTC(t.time * 1000);
+            
+            let pnlClass = '';
+            if (t.pnl > 0) pnlClass = 'text-green';
+            else if (t.pnl < 0) pnlClass = 'text-red';
+            
+            let typeColor = '#d1d4dc';
+            if (t.type.includes('LONG')) typeColor = '#26a69a';
+            if (t.type.includes('SHORT')) typeColor = '#ef5350';
+
+            row.innerHTML = `
+                <td style="padding:5px;">${timeStr}</td>
+                <td style="color:${typeColor}; font-size:10px;">${t.type.replace('_', ' ')}</td>
+                <td>${formatPrice(t.price)}</td>
+                <td style="color:#aaa;">${formatPrice(t.fee || 0)}</td>
+                <td class="${pnlClass}">${t.pnl !== 0 ? formatPrice(t.pnl) : '-'}</td>
+            `;
+            tableBody.appendChild(row);
+        });
+    }
+
+    initChart();
+    fetchAndPopulateSymbols();
+    switchMode('realtime');
+</script>
+</body>
+</html>
